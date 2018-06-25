@@ -1,0 +1,22 @@
+opam-version: "1.2"
+maintainer: "ilias.gar@gmail.com"
+authors: ["Ilias Garnier"]
+homepage: "https://github.com/igarnier/huxiang"
+bug-reports: "https://github.com/igarnier/huxiang"
+dev-repo: "git+https://github.com/igarnier/huxiang"
+license: "MIT"
+build: [
+  ["jbuilder" "build" "-p" name "-j" jobs]
+]
+depends: [
+  "jbuilder"                {build & >= "1.0+beta8"}
+  "yojson"
+  "batteries"
+  "sodium"
+  "lwt"
+  "lwt.unix"
+]
+available: [ ocaml-version >= "4.04.1" ]
+descr: "
+A library for simple communicating state machines over TCP.
+"

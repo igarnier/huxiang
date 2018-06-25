@@ -1,0 +1,7 @@
+(jbuild_version 1)
+
+(library
+ ((name        huxiang)
+  (public_name huxiang)
+  (ocamlopt_flags (-O3))
+  (libraries (batteries sodium yojson lwt lwt.unix))))
