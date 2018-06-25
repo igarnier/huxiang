@@ -1,0 +1,9 @@
+(jbuild_version 1)
+
+(executables
+  (
+  (names (client message))
+  (ocamlopt_flags (-O3))
+  (libraries (batteries ocaml-geth huxiang lwt lwt.unix))
+  )
+)
