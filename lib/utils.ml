@@ -10,7 +10,7 @@ let rec really_read fd buffer start length =
     Lwt.return ()
   else
     Lwt_unix.read fd buffer start length >>= function
-    | 0 -> raise End_of_file
+    | 0 -> Lwt.fail End_of_file
     | r -> really_read fd buffer (start + r) (length - r)
 
 let read_bytes_until_cr socket =
@@ -25,4 +25,10 @@ let read_bytes_until_cr socket =
       let acc = Bytes.cat acc (Bytes.sub buffer 0 n) in
       loop acc
   in
-  loop Bytes.empty
+  Lwt.catch (fun () ->
+      loop Bytes.empty
+    )
+    (fun exn ->
+       Lwt_io.eprint "huxiang: error caught in read_bytes_until_cr\n" >>= fun () ->
+       Lwt.fail exn
+    )
