@@ -26,57 +26,32 @@ let setup_server_tcp port =
 module Make (P : Protocol_Sig) =
 struct
   
-  let read_message socket =
-    Lwt.catch (fun () ->
-        Utils.read_bytes_until_cr socket >>= fun bytes ->
-        let str   = Bytes.to_string bytes in
-        let json  = Json.from_string str in
-        Lwt.return (P.I.from_json json)
-      )
-      (fun exn ->
-         Lwt_io.eprint "huxiang: error caught in read_message\n" >>= fun () ->
-         raise exn
-      )
-      
-  let write_message socket msg =
-    Lwt.catch (fun () ->
-        let json  = P.O.to_json msg in
-        let bytes = Json.to_string json in
-        let delim = bytes^"\r" in    
-        Utils.write_bytes socket delim >>= fun _ ->
-        Lwt.return ()
-      )
-      (fun exn ->
-         Lwt_io.eprint "huxiang: error caught in write_message\n" >>= fun () ->
-         raise exn
-      )
   
-  let process_client client_socket log_callback sstate =
+  let process_client client_addr client_socket log_callback keepalive_dt sstate =
     log_callback "new client connection";
-    let rec loop () =
-      read_message client_socket >>= fun input ->
-      log_callback ("read message: "^(Json.to_string (P.I.to_json input)));
-      let%lwt st, m_opt =
-        try%lwt
-          P.transition !sstate input
-        with
-        | exn ->
-          Lwt_io.eprint "huxiang: error caught in P.transition\n";%lwt
-          raise exn
-      in
-      (sstate := st;
-       match m_opt with
-       | None     -> loop ()
-       | Some msg ->
-         (log_callback ("wrote message: "^(Json.to_string (P.O.to_json msg)));
-          write_message client_socket msg >>= loop))
+    let state =
+      let open Keepalive in
+      {
+        socket       = client_socket;
+        state        = sstate;
+        status       = LinkAvailable;
+        nonce        = 0L;
+        keepalive_dt;
+        timeouts     = 0;
+        in_from_json = P.I.from_json;
+        in_to_json   = P.I.to_json;
+        out_to_json  = P.O.to_json;
+        transition   = P.transition;
+        log_callback
+      }
     in
-    loop ()
+    log_callback "initial message written";
+    Keepalive.loop state
       
-  let start ~port ~log_callback =
+  let start ~port ~log_callback ~keepalive_dt =
     let server =
       let%lwt socket = setup_server_tcp port in
-      let state = ref P.initial_state in
+      let state = Lwt_mvar.create P.initial_state in
       let rec loop () =
         Lwt_io.print "server: waiting for client\n";%lwt
         let%lwt client_socket, client_addr =
@@ -87,16 +62,10 @@ struct
             (Lwt_io.print "exception caught in accept";%lwt
              Lwt.fail exn)
         in
-        (* Lwt.async (fun () -> *)
-        try%lwt
-          process_client client_socket log_callback state;%lwt
-          loop ()
-        with
-        | exn ->
-          (Lwt_unix.close client_socket;%lwt
-           Lwt.fail exn);
-          (* ); *)
-        (* loop () *)
+        Lwt.async (fun () ->
+            process_client client_addr client_socket log_callback keepalive_dt state
+          );
+        loop ()
       in
       loop ()
     in

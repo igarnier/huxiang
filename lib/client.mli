@@ -1,6 +1,6 @@
 module Make (P : Types.Protocol_Sig)  :
 sig
 
-  val start : port:int -> log_callback:(string -> unit) -> initial_message:P.O.t -> unit
+  val start : port:int -> log_callback:(string -> unit) -> initial_message:P.O.t -> keepalive_dt:float -> unit
   
 end
