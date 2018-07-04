@@ -71,7 +71,7 @@ module Client = Huxiang.Client.Make(Protocol)
 
 let _ =
   Client.start
-    ~port:33333
+    ~port:(int_of_string Sys.argv.(1))
     ~log_callback:(fun s -> Printf.printf "client: %s\n%!" s)
     ~initial_message:(Protocol.O.Hello { client_id = "TODO parameterize protocol by id"; nonce = 0 })
 

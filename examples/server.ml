@@ -49,5 +49,5 @@ module Server = Huxiang.Server.Make(Protocol)
 
 let _ =
   Server.start
-    ~port:33333
+    ~port:(int_of_string Sys.argv.(1))
     ~log_callback:(fun s -> Printf.printf "serv: %s\n%!" s)

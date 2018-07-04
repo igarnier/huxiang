@@ -2,7 +2,7 @@
 
 (executables
   (
-  (names (client message))
+  (names (client server))
   (ocamlopt_flags (-O3))
   (libraries (batteries ocaml-geth huxiang lwt lwt.unix))
   )
