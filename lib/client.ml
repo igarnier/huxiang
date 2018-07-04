@@ -24,10 +24,10 @@ let setup_client_tcp port =
 module Make (P : Protocol_Sig) =
 struct
 
-  let start ~port ~(log_callback : string -> unit) ~initial_message ~keepalive_dt =
+  let start ~port ~log_callback ~initial_message ~keepalive_dt =
     let client =
       let%lwt socket = setup_client_tcp port in
-      log_callback "setup finished";
+      log_callback "setup finished";%lwt
       let state =
         let open Keepalive in
         {
@@ -44,7 +44,7 @@ struct
           log_callback
         }
       in
-      log_callback "initial message written";
+      log_callback "initial message written";%lwt
       Transport.write_message socket (Transport.Json (P.O.to_json initial_message));%lwt
       Keepalive.loop state
     in

@@ -28,7 +28,7 @@ struct
   
   
   let process_client client_addr client_socket log_callback keepalive_dt sstate =
-    log_callback "new client connection";
+    log_callback "new client connection";%lwt
     let state =
       let open Keepalive in
       {
@@ -45,7 +45,7 @@ struct
         log_callback
       }
     in
-    log_callback "initial message written";
+    log_callback "initial message written";%lwt
     Keepalive.loop state
       
   let start ~port ~log_callback ~keepalive_dt =

@@ -81,7 +81,7 @@ let write_message socket msg =
     | Ack i ->
       Lwt.return @@ "ackn"^(Int64.to_string i)
   in
-  let     delim  = bytes^"\r" in    
-  let%lwt nbytes = write_bytes socket delim in
+  let     data   = bytes^"\r" in    
+  let%lwt nbytes = write_bytes socket data in
   Lwt.return ()
 
