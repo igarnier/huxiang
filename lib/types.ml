@@ -19,7 +19,7 @@ sig
   type state
 
   val initial_state   : state
-  val initial_message : O.t
+  val initial_message : O.t option
 
   val transition : state -> I.t -> (state * O.t option) Lwt.t
   
@@ -34,7 +34,7 @@ sig
   type state
 
   val initial_state   : state
-  val initial_message : O.t
+  val initial_message : O.t option
 
   val transition : state -> I.t -> (state * O.t option)
   

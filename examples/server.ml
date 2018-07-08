@@ -15,21 +15,23 @@ struct
   type state = (I.client_id * (float * int)) list
 
   let initial_state = []
-
-  let initial_message =
-    O.ServerStartup
+                      
+  let initial_message = None
 
   let transition state in_msg =
     match in_msg with
     | I.Hello { client_id; nonce } ->
+      Lwt_io.eprintf "-> hello %s %d\n" client_id nonce;%lwt
       (match List.assoc_opt client_id state with
        | None ->
          let t = Unix.gettimeofday () in
          let state = (client_id, (t, nonce)) :: state in
+         Lwt_io.eprintf "<- ack(hello %s %d)\n" client_id nonce;%lwt
          Lwt.return (state, Some (O.Ack in_msg))
        | Some _ ->
          Lwt.fail_with "transition: client already Hello'd")
     | I.Alive { client_id; nonce } ->
+      Lwt_io.eprintf "-> alive %s %d\n" client_id nonce;%lwt
       (match List.assoc_opt client_id state with
        | None ->
          Lwt.fail_with "transition: client didn't Hello"
@@ -39,7 +41,8 @@ struct
            (Lwt_io.print "transition: server died\n";%lwt
             Lwt.return (state, (Some O.Die)))
          else
-           Lwt.return (state, Some (O.Ack in_msg))
+           (Lwt_io.eprintf "<- ack %s %d\n" client_id nonce;%lwt
+            Lwt.return (state, Some (O.Ack in_msg)))
       )
 
 end

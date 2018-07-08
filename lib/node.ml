@@ -132,13 +132,14 @@ struct
       write_to_outgoing out nonce outgoing;
       loop state Int64.(nonce + one)
     in
-    let nonce = 0L in
-    let msg   = P.initial_message in
-    Printf.eprintf "writing on outgoing port\n%!";
-    write_to_outgoing [msg] nonce outgoing;
-    let _ = failwith "" in    
-    Printf.eprintf "initial message sent\n%!";
-    loop state 1L
+    match P.initial_message with
+    | None ->
+      loop state 0L
+    | Some msg ->
+      (Printf.eprintf "writing on outgoing port\n%!";
+       write_to_outgoing [msg] 0L outgoing;
+       Printf.eprintf "initial message sent\n%!";
+       loop state 1L)
 
   let start ~ingoing ~outgoing =
     let ctx       = Context.create () in

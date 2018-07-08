@@ -26,7 +26,7 @@ struct
     }
 
   let initial_message =
-    O.Hello { client_id = initial_state.id; nonce = initial_state.nonce }
+    Some (O.Hello { client_id = initial_state.id; nonce = initial_state.nonce })
 
   let alive id nonce =
     O.Alive { client_id = id; nonce }

@@ -78,7 +78,7 @@ struct
   let read_and_ack provider =
     let%lwt str = LwtSocket.recv provider in
     let%lwt msg = input str in
-    Lwt_io.printf "reader: read message %s" (print_msg msg);%lwt
+    Lwt_log.log_f ~level:Debug "reader: read message %s" (print_msg msg);%lwt
     match msg with
     | Void { nonce }
     | Json { nonce } ->
@@ -90,11 +90,11 @@ struct
 
   let write_and_get_acked msg (consumer : [`Req] LwtSocket.t) =
     LwtSocket.send consumer (output msg);%lwt
-    Lwt_io.printf "writer: output message %s sent, waiting for ack\n" (print_msg msg);%lwt
+    Lwt_log.log_f ~level:Debug "writer: output message %s sent, waiting for ack\n" (print_msg msg);%lwt
     let%lwt str = LwtSocket.recv consumer in
-    Lwt_io.print "writer: ack received\n";%lwt
+    Lwt_log.log ~level:Debug "writer: ack received\n";%lwt
     let%lwt msg = input str in
-    Lwt_io.print "writer: input parsed\n";%lwt
+    Lwt_log.log ~level:Debug "writer: input parsed\n";%lwt
     match msg with
     | Ack { nonce } ->
       if not (Int64.equal nonce (get_nonce msg)) then
@@ -134,60 +134,86 @@ struct
   
   let reader_thread { ingoing; outgoing; mqueue; state } =
     let rec loop state =
-      Lwt_io.print "reader: loop entered\n";%lwt
+      Lwt_log.log ~level:Debug "reader: loop entered\n";%lwt
       let%lwt in_msgs = read_from_ingoing ingoing in
-      Lwt_io.print "reader: read\n";%lwt
+      Lwt_log.log ~level:Debug "reader: read\n";%lwt
       let%lwt st, out = 
         try%lwt evolve_state in_msgs state
         with
         | exn ->
-          Lwt_io.printf "reader: error caught in evolve: %s\n" (Printexc.to_string exn);%lwt
+          Lwt_log.log_f ~level:Debug "reader: error caught in evolve: %s\n" (Printexc.to_string exn);%lwt
           Lwt.fail exn
       in
-      Lwt_io.print "reader: evolved\n";%lwt
+      Lwt_log.log ~level:Debug "reader: evolved\n";%lwt
       Lwt_mvar.put mqueue out;%lwt
-      Lwt_io.print "reader: put\n";%lwt
+      Lwt_log.log ~level:Debug "reader: put\n";%lwt
       loop st
     in
     loop state
 
   let writer_thread { outgoing; mqueue } =
     let rec loop nonce =
-      Lwt_io.print "writer: loop entered\n";%lwt
+      Lwt_log.log ~level:Debug "writer: loop entered\n";%lwt
       let%lwt msgs = Lwt_mvar.take mqueue in
-      Lwt_io.print "writer: taken\n";%lwt
+      Lwt_log.log ~level:Debug "writer: taken\n";%lwt
       write_to_outgoing msgs nonce outgoing;%lwt
-      Lwt_io.print "writer: written\n";%lwt
+      Lwt_log.log ~level:Debug "writer: written\n";%lwt
       loop Int64.(nonce + one)
     in
-    let nonce = 0L in
-    let msg   = P.initial_message in
-    Lwt_io.print "writing on outgoing port\n";%lwt
-    write_to_outgoing [msg] nonce outgoing;%lwt
-    Lwt_io.print "initial message sent\n";%lwt
-    loop 1L
+    match P.initial_message with
+    | None ->
+      loop 0L
+    | Some msg ->
+      (Lwt_log.log ~level:Debug "writing on outgoing port\n";%lwt
+       write_to_outgoing [msg] 0L outgoing;%lwt
+       Lwt_log.log ~level:Debug "initial message sent\n";%lwt
+       loop 1L)
+
+  let with_context f =
+    let c = Context.create () in
+    let r = f c in
+    Context.terminate c;
+    r
+
+  let close { ingoing; outgoing } =
+    List.iter (fun s ->
+        let s = LwtSocket.to_socket s in
+        Socket.close s
+      ) ingoing;
+    List.iter (fun s ->
+        let s = LwtSocket.to_socket s in
+        Socket.close s
+      ) outgoing
 
   let start ~ingoing ~outgoing =
-    let ctx       = Context.create () in
-    let ingoing =
-      List.map (fun prov_addr ->
-          let sck = Socket.(create ctx rep) in
-          (try Socket.connect sck prov_addr with _ -> failwith "rep bind");
-          LwtSocket.of_socket sck
-        ) ingoing
-    in
-    let outgoing =
-      List.map (fun cons_addr ->
-          let sck = Socket.(create ctx req) in
-          (try Socket.bind sck cons_addr with _ -> failwith "req bind");
-          LwtSocket.of_socket sck
-        ) outgoing
-    in
-    let record = { ingoing; outgoing;
-                   state = P.initial_state;
-                   mqueue = Lwt_mvar.create_empty () } in
-    Printf.printf "Starting node\n%!";
-    Lwt_main.run (Lwt.join [ reader_thread record;
-                             writer_thread record ])
+    with_context (fun ctx ->
 
+        let ingoing =
+          List.map (fun prov_addr ->
+              let sck = Socket.(create ctx rep) in
+              Socket.connect sck prov_addr;
+              LwtSocket.of_socket sck
+            ) ingoing
+        in
+        let outgoing =
+          List.map (fun cons_addr ->
+              let sck = Socket.(create ctx req) in
+              Socket.bind sck cons_addr;
+              LwtSocket.of_socket sck
+            ) outgoing
+        in
+        let record = { ingoing; outgoing;
+                       state = P.initial_state;
+                       mqueue = Lwt_mvar.create_empty () } in
+        let program =
+          Lwt.finalize
+            (fun () ->
+               Lwt_log.log ~level:Info "Starting node\n";%lwt
+               Lwt.join [ reader_thread record;
+                          writer_thread record ])
+            (fun () -> Lwt.return (close record))
+        in        
+        Lwt_main.run program
+
+      )
 end
