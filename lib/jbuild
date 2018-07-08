@@ -4,7 +4,7 @@
  ((name        huxiang)
   (public_name huxiang)
   (ocamlopt_flags (-O3))
-  (libraries (batteries sodium yojson lwt lwt.unix))
+  (libraries (batteries sodium yojson lwt lwt.unix zmq zmq-lwt))
   (preprocess (pps (lwt_ppx)))
  )
 

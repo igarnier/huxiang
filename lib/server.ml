@@ -23,7 +23,7 @@ let setup_server_tcp port =
      Lwt.fail exn)
 
 
-module Make (P : Protocol_Sig) =
+module Make (P : ProtocolLwt_Sig) =
 struct
   
   

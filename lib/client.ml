@@ -21,7 +21,7 @@ let setup_client_tcp port =
     Lwt.fail exn
 
 
-module Make (P : Protocol_Sig) =
+module Make (P : ProtocolLwt_Sig) =
 struct
 
   let start ~port ~log_callback ~initial_message ~keepalive_dt =

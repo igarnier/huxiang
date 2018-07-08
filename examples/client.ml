@@ -25,6 +25,9 @@ struct
       nonce  = 0
     }
 
+  let initial_message =
+    O.Hello { client_id = initial_state.id; nonce = initial_state.nonce }
+
   let alive id nonce =
     O.Alive { client_id = id; nonce }
 
@@ -36,42 +39,49 @@ struct
      It would be good if that initial message was part of the protocol.
   *)
   let transition state in_msg =
-    let result =
     match state.status with
-    | Dead   -> (dead_state, None)
+    | Dead   ->
+      Lwt.return (dead_state, None)
     | Unborn ->
       (match in_msg with
+       | I.ServerStartup ->
+         Lwt.return (state, None)
        | I.Ack (O.Hello { client_id; nonce })
          when (client_id = initial_state.id && nonce = initial_state.nonce) ->
+         Lwt_io.eprintf "ack (hello %s %d)\n" client_id nonce;%lwt
          let state = { state with
                        status = Alive;
                        nonce  = state.nonce + 1
                      } in
-         (state, Some (alive state.id state.nonce))
+         Lwt.return (state, Some (alive state.id state.nonce))
        | _ ->
-         (dead_state, None)
+         Lwt_io.eprintf "client dead\n";%lwt
+         Lwt.return (dead_state, None)
       )
     | Alive ->
       (match in_msg with
-       | I.Ack (O.Alive { client_id; nonce })
+       | I.ServerStartup ->
+         Lwt.return (state, None)       
+       | I.Ack (O.Alive { client_id; nonce })           
          when client_id = state.id && nonce = state.nonce ->
+         Lwt_io.eprintf "ack (alive %s %d)\n" client_id nonce;%lwt
          let state = { state with
                        nonce  = state.nonce + 1
                      } in
-         (state, Some (alive state.id state.nonce))
+         Lwt.return (state, Some (alive state.id state.nonce))
        | _ ->
-         (dead_state, None)
+         Lwt_io.eprintf "client dead\n";%lwt
+         Lwt.return (dead_state, None)
       )
-    in
-    Lwt.return result
+
+
       
 end
 
-module Client = Huxiang.Client.Make(Protocol)
+module Client = Huxiang.Node_lwt.Make(Protocol)
 
 let _ =
   Client.start
-    ~port:(int_of_string Sys.argv.(1))
-    ~log_callback:(fun s -> Printf.printf "client: %s\n%!" s)
-    ~initial_message:(Protocol.O.Hello { client_id = "TODO parameterize protocol by id"; nonce = 0 })
+    ~ingoing:["tcp://127.0.0.1:5556"]
+    ~outgoing:["tcp://127.0.0.1:5557"]
 

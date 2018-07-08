@@ -1,7 +1,7 @@
 open Batteries
 open Huxiang.Types
 
-module Protocol : Protocol_Sig =
+module Protocol : ProtocolLwt_Sig =
 struct
 
   module I = Messages.ClientToServer
@@ -16,38 +16,37 @@ struct
 
   let initial_state = []
 
+  let initial_message =
+    O.ServerStartup
+
   let transition state in_msg =
-    let result =
-      match in_msg with
-      | I.Hello { client_id; nonce } ->
-        let state =
-          (match List.assoc_opt client_id state with
-           | None ->
-             let t = Unix.gettimeofday () in
-             (client_id, (t, nonce)) :: state
-           | Some _ ->
-             failwith "transition: client already Hello'd")
-        in
-        (state, Some (O.Ack in_msg))
-      | I.Alive { client_id; nonce } ->
-        (match List.assoc_opt client_id state with
-         | None ->
-           failwith "transition: client didn't Hello"
-         | Some (t', nonce') ->
-           let t = Unix.gettimeofday () in
-           if nonce' >= nonce || (t -. t' >= 30.0) then
-             (state, (Some O.Die))
-           else
-             (state, Some (O.Ack in_msg))
-        )
-    in
-    Lwt.return result
-      
+    match in_msg with
+    | I.Hello { client_id; nonce } ->
+      (match List.assoc_opt client_id state with
+       | None ->
+         let t = Unix.gettimeofday () in
+         let state = (client_id, (t, nonce)) :: state in
+         Lwt.return (state, Some (O.Ack in_msg))
+       | Some _ ->
+         Lwt.fail_with "transition: client already Hello'd")
+    | I.Alive { client_id; nonce } ->
+      (match List.assoc_opt client_id state with
+       | None ->
+         Lwt.fail_with "transition: client didn't Hello"
+       | Some (t', nonce') ->
+         let t = Unix.gettimeofday () in
+         if nonce' >= nonce || (t -. t' >= 30.0) then
+           (Lwt_io.print "transition: server died\n";%lwt
+            Lwt.return (state, (Some O.Die)))
+         else
+           Lwt.return (state, Some (O.Ack in_msg))
+      )
+
 end
 
-module Server = Huxiang.Server.Make(Protocol)
+module Server = Huxiang.Node_lwt.Make(Protocol)
 
 let _ =
   Server.start
-    ~port:(int_of_string Sys.argv.(1))
-    ~log_callback:(fun s -> Printf.printf "serv: %s\n%!" s)
+    ~ingoing:["tcp://127.0.0.1:5557"]
+    ~outgoing:["tcp://127.0.0.1:5556"]

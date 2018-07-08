@@ -35,11 +35,14 @@ module ServerToClient =
 struct
 
   type t =
+    | ServerStartup
     | Ack of ClientToServer.t
     | Die
 
   let to_json (message : t) : Json.json =
     match message with
+    | ServerStartup ->
+      `Variant("ServerStartup", None)
     | Ack msg ->
       `Variant("Ack", Some (ClientToServer.to_json msg))
     | Die ->
@@ -47,6 +50,8 @@ struct
 
   let from_json (j : Json.json) : t =
     match j with
+    | `Variant("ServerStartup", None) ->
+      ServerStartup
     | `Variant("Ack", Some msg) ->
       Ack (ClientToServer.from_json msg)
     | `Variant("Die", None) ->
