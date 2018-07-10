@@ -90,11 +90,11 @@ struct
 
   let write_and_get_acked msg (consumer : [`Req] LwtSocket.t) =
     LwtSocket.send consumer (output msg);%lwt
-    Lwt_log.log_f ~level:Debug "writer: output message %s sent, waiting for ack\n" (print_msg msg);%lwt
+    Lwt_log.log_f ~level:Debug "writer: output message %s sent, waiting for ack" (print_msg msg);%lwt
     let%lwt str = LwtSocket.recv consumer in
-    Lwt_log.log ~level:Debug "writer: ack received\n";%lwt
+    Lwt_log.log ~level:Debug "writer: ack received";%lwt
     let%lwt msg = input str in
-    Lwt_log.log ~level:Debug "writer: input parsed\n";%lwt
+    Lwt_log.log ~level:Debug "writer: input parsed";%lwt
     match msg with
     | Ack { nonce } ->
       if not (Int64.equal nonce (get_nonce msg)) then
@@ -134,39 +134,39 @@ struct
   
   let reader_thread { ingoing; outgoing; mqueue; state } =
     let rec loop state =
-      Lwt_log.log ~level:Debug "reader: loop entered\n";%lwt
+      Lwt_log.log ~level:Debug "reader: loop entered";%lwt
       let%lwt in_msgs = read_from_ingoing ingoing in
-      Lwt_log.log ~level:Debug "reader: read\n";%lwt
+      Lwt_log.log ~level:Debug "reader: read";%lwt
       let%lwt st, out = 
         try%lwt evolve_state in_msgs state
         with
         | exn ->
-          Lwt_log.log_f ~level:Debug "reader: error caught in evolve: %s\n" (Printexc.to_string exn);%lwt
+          Lwt_log.log_f ~level:Debug "reader: error caught in evolve: %s" (Printexc.to_string exn);%lwt
           Lwt.fail exn
       in
-      Lwt_log.log ~level:Debug "reader: evolved\n";%lwt
+      Lwt_log.log ~level:Debug "reader: evolved";%lwt
       Lwt_mvar.put mqueue out;%lwt
-      Lwt_log.log ~level:Debug "reader: put\n";%lwt
+      Lwt_log.log ~level:Debug "reader: put";%lwt
       loop st
     in
     loop state
 
   let writer_thread { outgoing; mqueue } =
     let rec loop nonce =
-      Lwt_log.log ~level:Debug "writer: loop entered\n";%lwt
+      Lwt_log.log ~level:Debug "writer: loop entered";%lwt
       let%lwt msgs = Lwt_mvar.take mqueue in
-      Lwt_log.log ~level:Debug "writer: taken\n";%lwt
+      Lwt_log.log ~level:Debug "writer: taken";%lwt
       write_to_outgoing msgs nonce outgoing;%lwt
-      Lwt_log.log ~level:Debug "writer: written\n";%lwt
+      Lwt_log.log ~level:Debug "writer: written";%lwt
       loop Int64.(nonce + one)
     in
     match P.initial_message with
     | None ->
       loop 0L
     | Some msg ->
-      (Lwt_log.log ~level:Debug "writing on outgoing port\n";%lwt
+      (Lwt_log.log ~level:Debug "writing on outgoing port";%lwt
        write_to_outgoing [msg] 0L outgoing;%lwt
-       Lwt_log.log ~level:Debug "initial message sent\n";%lwt
+       Lwt_log.log ~level:Debug "initial message sent";%lwt
        loop 1L)
 
   let with_context f =
@@ -208,7 +208,7 @@ struct
         let program =
           Lwt.finalize
             (fun () ->
-               Lwt_log.log ~level:Info "Starting node\n";%lwt
+               Lwt_log.log ~level:Info "Starting node!";%lwt
                Lwt.join [ reader_thread record;
                           writer_thread record ])
             (fun () -> Lwt.return (close record))
