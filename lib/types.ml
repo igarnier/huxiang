@@ -1,6 +1,6 @@
 type json = Yojson.Safe.json
 
-module type Message_Sig =
+module type Message =
 sig
 
   type t
@@ -10,11 +10,11 @@ sig
 
 end
 
-module type ProtocolLwt_Sig =
+module type Process =
 sig
 
-  module I : Message_Sig
-  module O : Message_Sig
+  module I : Message
+  module O : Message
 
   type state
 
@@ -22,20 +22,5 @@ sig
   val initial_message : O.t option
 
   val transition : state -> I.t -> (state * O.t option) Lwt.t
-  
-end
-
-module type Protocol_Sig =
-sig
-
-  module I : Message_Sig
-  module O : Message_Sig
-
-  type state
-
-  val initial_state   : state
-  val initial_message : O.t option
-
-  val transition : state -> I.t -> (state * O.t option)
   
 end

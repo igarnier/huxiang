@@ -6,7 +6,7 @@ open Types
 module LwtSocket = Zmq_lwt.Socket
 module Json = Yojson.Safe
 
-module Make(P : ProtocolLwt_Sig) =
+module Make(P : Process) =
 struct
 
   type message =
