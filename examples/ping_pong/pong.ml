@@ -26,7 +26,7 @@ let _ =
                         ~channel:Lwt_io.stderr
                         ~close_mode:`Keep
                         ());  
-  PongNode.start
+  PongNode.start_mcast
     ~ingoing:["tcp://127.0.0.1:5557"]
     ~outgoing:["tcp://127.0.0.1:5556"]
 

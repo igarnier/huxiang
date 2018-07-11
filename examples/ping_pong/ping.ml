@@ -35,7 +35,6 @@ let _ =
                         ~channel:Lwt_io.stderr
                         ~close_mode:`Keep
                         ());  
-  PingNode.start
+  PingNode.start_mcast
     ~ingoing:["tcp://127.0.0.1:5556"]
     ~outgoing:["tcp://127.0.0.1:5557"]
-
