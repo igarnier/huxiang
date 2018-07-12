@@ -105,23 +105,17 @@ struct
       match input_message with
       | Ack _         -> None
       | Json { json } ->
-        Some (P.I.from_json json)
+        Some (P.I.of_yojson_exn json)
     in
     Lwt.return message
-
-  (* let write_to_outgoing msgs uid (outgoing : [`Req] LwtSocket.t list) =
-   *   Lwt_list.iter_p (fun msg ->
-   *       let m    = Json { json = P.O.to_json msg; uid } in
-   *       Lwt_list.iter_p (write_and_get_acked m) outgoing
-   *     ) msgs *)
 
   let write_to_outgoing msg uid routing =
     match routing with
     | Mcast outgoing ->
-      let m = Json { json = P.O.to_json msg; uid } in
+      let m = Json { json = P.O.to_yojson msg; uid } in
       Lwt_list.iter_p (write_and_get_acked m) outgoing
     | Dynamic table ->
-      let m = Json { json = P.O.to_json msg; uid } in
+      let m = Json { json = P.O.to_yojson msg; uid } in
       write_and_get_acked m (table msg)
         
   let evolve_state in_msg_opt state =

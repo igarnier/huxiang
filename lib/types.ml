@@ -5,8 +5,9 @@ sig
 
   type t
 
-  val to_json : t -> json
-  val from_json : json -> t
+  val to_yojson : t -> json
+  val of_yojson : json -> (t, string) Result.result
+  val of_yojson_exn : json -> t
 
 end
 
