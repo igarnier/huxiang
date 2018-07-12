@@ -22,7 +22,8 @@ struct
       ingoing  : [`Rep] LwtSocket.t; (* recv; send *)
       routing  : routing;
       mqueue   : P.O.t Lwt_mvar.t;
-      state    : P.state
+      state    : P.state;
+      process  : (P.state, P.I.t, P.O.t) Types.t
     }
   
   let get_uid = function
@@ -76,10 +77,10 @@ struct
     let%lwt msg = input str in
     Lwt_log.log_f ~level:Debug "reader: read message %s" (print_msg msg);%lwt
     match msg with
-    | Json { uid } ->
+    | Json { uid; json } ->
       let reply = Ack { uid } in      
       LwtSocket.send provider (output reply);%lwt
-      Lwt.return msg   
+      Lwt.return json 
     | Ack _ ->
       Lwt.fail_with "huxiang/node/read_and_ack: wrong message"
 
@@ -100,14 +101,8 @@ struct
       Lwt.fail_with "huxiang/node/write_and_get_acked: wrong message"
         
   let read_from_ingoing ingoing =
-    let%lwt input_message = read_and_ack ingoing in
-    let message =
-      match input_message with
-      | Ack _         -> None
-      | Json { json } ->
-        Some (P.I.of_yojson_exn json)
-    in
-    Lwt.return message
+    let%lwt json = read_and_ack ingoing in
+    Lwt.return (P.I.of_yojson_exn json)
 
   let write_to_outgoing msg uid routing =
     match routing with
@@ -118,23 +113,27 @@ struct
       let m = Json { json = P.O.to_yojson msg; uid } in
       write_and_get_acked m (table msg)
         
-  let evolve_state in_msg_opt state =
-    match in_msg_opt with
-    | None -> Lwt.return (state, None)
-    | Some in_msg ->
-      P.transition state in_msg
-  
-  let reader_thread { ingoing; mqueue; state } =
-    let rec loop state =
+  let reader_thread { ingoing; mqueue; state; process } =
+    let rec loop state process =
       Lwt_log.log ~level:Debug "reader: loop entered";%lwt
-      let%lwt in_msg = read_from_ingoing ingoing in
-      Lwt_log.log ~level:Debug "reader: read";%lwt
-      let%lwt st, out = 
-        try%lwt evolve_state in_msg state
-        with
-        | exn ->
-          Lwt_log.log_f ~level:Debug "reader: error caught in evolve: %s" (Printexc.to_string exn);%lwt
-          Lwt.fail exn
+      let%lwt st, out, proc =
+        match process with
+        | Input transition ->
+          (let%lwt in_msg = read_from_ingoing ingoing in
+           Lwt_log.log ~level:Debug "reader: read";%lwt
+           try%lwt transition state in_msg
+           with
+           | exn ->
+             Lwt_log.log_f ~level:Debug "reader: error caught in evolve: %s" (Printexc.to_string exn);%lwt
+             Lwt.fail exn
+          )
+        | NoInput transition ->
+          (try%lwt transition state
+           with
+           | exn ->
+             Lwt_log.log_f ~level:Debug "reader: error caught in evolve: %s" (Printexc.to_string exn);%lwt
+             Lwt.fail exn
+          )
       in
       Lwt_log.log ~level:Debug "reader: evolved";%lwt
       (match out with
@@ -143,9 +142,9 @@ struct
          Lwt_mvar.put mqueue out;%lwt
          Lwt_log.log ~level:Debug "reader: put"
       );%lwt
-      loop st
+      loop st proc
     in
-    loop state
+    loop state process
 
   let writer_thread { routing; mqueue } =
     let rec loop uid =
@@ -156,14 +155,14 @@ struct
       Lwt_log.log ~level:Debug "writer: written";%lwt
       loop Int64.(uid + one)
     in
-    match P.initial_message with
-    | None ->
-      loop 0L
-    | Some msg ->
-      (Lwt_log.log ~level:Debug "writing on outgoing port";%lwt
-       write_to_outgoing msg 0L routing;%lwt
-       Lwt_log.log ~level:Debug "initial message sent";%lwt
-       loop 1L)
+    (* match P.initial_message with
+     * | None ->
+     *   loop 0L
+     * | Some msg ->
+     *   (Lwt_log.log ~level:Debug "writing on outgoing port";%lwt
+     *    write_to_outgoing msg 0L routing;%lwt
+     *    Lwt_log.log ~level:Debug "initial message sent";%lwt *)
+    loop 0L
 
   let with_context f =
     let c = Context.create () in
@@ -198,8 +197,9 @@ struct
           {
             ingoing;
             routing;
-            state  = P.initial_state;
-            mqueue = Lwt_mvar.create_empty ()
+            mqueue  = Lwt_mvar.create_empty ();
+            state   = P.initial_state;
+            process = P.process            
           }
         in
         let program =
@@ -243,8 +243,9 @@ struct
           {
             ingoing;
             routing;
-            state  = P.initial_state;
-            mqueue = Lwt_mvar.create_empty ()
+            mqueue  = Lwt_mvar.create_empty ();
+            state   = P.initial_state;
+            process = P.process
           }
         in
         let program =
