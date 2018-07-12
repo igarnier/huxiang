@@ -34,7 +34,7 @@ let _ =
                         ~template:"$(date).$(milliseconds) [$(level)] $(message)"
                         ~channel:Lwt_io.stderr
                         ~close_mode:`Keep
-                        ());  
+                        ());
   PingNode.start_mcast
-    ~ingoing:["tcp://127.0.0.1:5556"]
+    ~listening:"tcp://127.0.0.1:5556"
     ~outgoing:["tcp://127.0.0.1:5557"]

@@ -27,6 +27,6 @@ let _ =
                         ~close_mode:`Keep
                         ());  
   PongNode.start_mcast
-    ~ingoing:["tcp://127.0.0.1:5557"]
+    ~listening:"tcp://127.0.0.1:5557"
     ~outgoing:["tcp://127.0.0.1:5556"]
 

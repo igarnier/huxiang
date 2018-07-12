@@ -10,7 +10,6 @@ module Make(P : Process) =
 struct
 
   type message =
-    | Void of { uid : int64 }
     | Json of { json : json; uid : int64 }
     | Ack  of { uid : int64 }
 
@@ -20,21 +19,18 @@ struct
       
   type t =
     {
-      ingoing  : [`Rep] LwtSocket.t list; (* recv; send *)
+      ingoing  : [`Rep] LwtSocket.t; (* recv; send *)
       routing  : routing;
-      mqueue   : P.O.t list Lwt_mvar.t;
+      mqueue   : P.O.t Lwt_mvar.t;
       state    : P.state
     }
   
   let get_uid = function
-    | Void { uid }
     | Json { uid }
     | Ack  { uid } -> uid
 
   let print_msg msg =
     match msg with
-    | Void { uid } -> 
-      Printf.sprintf "void(%Ld)" uid
     | Json { json; uid } ->
       Printf.sprintf "json(%s/%Ld)" (Json.to_string json) uid
     | Ack { uid } ->
@@ -60,8 +56,6 @@ struct
       let uid = int64_of_bytes (String.sub str 4 8) in
       let tail  = String.tail str 12 in
       match headr with
-      | "void" ->
-        Lwt.return (Void { uid })
       | "json" ->
         let json = Json.from_string tail in
         Lwt.return (Json { json; uid })
@@ -72,8 +66,6 @@ struct
 
   let output msg =
     match msg with
-    | Void { uid } ->
-      "void"^(bytes_of_int64 uid)
     | Json { json; uid } ->
       "json"^(bytes_of_int64 uid)^(Json.to_string json)
     | Ack { uid } ->
@@ -84,7 +76,6 @@ struct
     let%lwt msg = input str in
     Lwt_log.log_f ~level:Debug "reader: read message %s" (print_msg msg);%lwt
     match msg with
-    | Void { uid }
     | Json { uid } ->
       let reply = Ack { uid } in      
       LwtSocket.send provider (output reply);%lwt
@@ -109,18 +100,14 @@ struct
       Lwt.fail_with "huxiang/node/write_and_get_acked: wrong message"
         
   let read_from_ingoing ingoing =
-    let%lwt input_messages =
-      Lwt_list.map_p read_and_ack ingoing
+    let%lwt input_message = read_and_ack ingoing in
+    let message =
+      match input_message with
+      | Ack _         -> None
+      | Json { json } ->
+        Some (P.I.from_json json)
     in
-    let messages =
-      List.fold_left (fun acc msg ->
-          match msg with
-          | Ack _ | Void _ -> acc
-          | Json { json } ->
-            (P.I.from_json json) :: acc
-        ) [] input_messages
-    in
-    Lwt.return messages
+    Lwt.return message
 
   (* let write_to_outgoing msgs uid (outgoing : [`Req] LwtSocket.t list) =
    *   Lwt_list.iter_p (fun msg ->
@@ -128,42 +115,40 @@ struct
    *       Lwt_list.iter_p (write_and_get_acked m) outgoing
    *     ) msgs *)
 
-  let write_to_outgoing msgs uid routing =
+  let write_to_outgoing msg uid routing =
     match routing with
     | Mcast outgoing ->
-      Lwt_list.iter_p (fun msg ->
-          let m = Json { json = P.O.to_json msg; uid } in
-          Lwt_list.iter_p (write_and_get_acked m) outgoing
-        ) msgs
+      let m = Json { json = P.O.to_json msg; uid } in
+      Lwt_list.iter_p (write_and_get_acked m) outgoing
     | Dynamic table ->
-      Lwt_list.iter_p (fun msg ->
-          let m = Json { json = P.O.to_json msg; uid } in
-          write_and_get_acked m (table msg)
-        ) msgs
+      let m = Json { json = P.O.to_json msg; uid } in
+      write_and_get_acked m (table msg)
         
-  let evolve_state in_msgs state =
-    Lwt_list.fold_left_s (fun (state, out_msgs) in_msg ->
-        let%lwt st, out_opt = P.transition state in_msg in
-        match out_opt with
-        | None   -> Lwt.return (st, out_msgs)
-        | Some m -> Lwt.return (st, m :: out_msgs)
-      ) (state, []) in_msgs
+  let evolve_state in_msg_opt state =
+    match in_msg_opt with
+    | None -> Lwt.return (state, None)
+    | Some in_msg ->
+      P.transition state in_msg
   
   let reader_thread { ingoing; mqueue; state } =
     let rec loop state =
       Lwt_log.log ~level:Debug "reader: loop entered";%lwt
-      let%lwt in_msgs = read_from_ingoing ingoing in
+      let%lwt in_msg = read_from_ingoing ingoing in
       Lwt_log.log ~level:Debug "reader: read";%lwt
       let%lwt st, out = 
-        try%lwt evolve_state in_msgs state
+        try%lwt evolve_state in_msg state
         with
         | exn ->
           Lwt_log.log_f ~level:Debug "reader: error caught in evolve: %s" (Printexc.to_string exn);%lwt
           Lwt.fail exn
       in
       Lwt_log.log ~level:Debug "reader: evolved";%lwt
-      Lwt_mvar.put mqueue out;%lwt
-      Lwt_log.log ~level:Debug "reader: put";%lwt
+      (match out with
+       | None -> Lwt.return ()
+       | Some out ->
+         Lwt_mvar.put mqueue out;%lwt
+         Lwt_log.log ~level:Debug "reader: put"
+      );%lwt
       loop st
     in
     loop state
@@ -171,9 +156,9 @@ struct
   let writer_thread { routing; mqueue } =
     let rec loop uid =
       Lwt_log.log ~level:Debug "writer: loop entered";%lwt
-      let%lwt msgs = Lwt_mvar.take mqueue in
+      let%lwt msg = Lwt_mvar.take mqueue in
       Lwt_log.log ~level:Debug "writer: taken";%lwt
-      write_to_outgoing msgs uid routing;%lwt
+      write_to_outgoing msg uid routing;%lwt
       Lwt_log.log ~level:Debug "writer: written";%lwt
       loop Int64.(uid + one)
     in
@@ -182,7 +167,7 @@ struct
       loop 0L
     | Some msg ->
       (Lwt_log.log ~level:Debug "writing on outgoing port";%lwt
-       write_to_outgoing [msg] 0L routing;%lwt
+       write_to_outgoing msg 0L routing;%lwt
        Lwt_log.log ~level:Debug "initial message sent";%lwt
        loop 1L)
 
@@ -193,24 +178,19 @@ struct
     r
 
   let close ingoing outgoing =
-    List.iter (fun s ->
-        let s = LwtSocket.to_socket s in
-        Socket.close s
-      ) ingoing;
+    Socket.close (LwtSocket.to_socket ingoing);
     List.iter (fun s ->
         let s = LwtSocket.to_socket s in
         Socket.close s
       ) outgoing
 
-  let start_mcast ~ingoing ~outgoing =
+  let start_mcast ~listening ~outgoing =
     with_context (fun ctx ->
 
         let ingoing =
-          List.map (fun prov_addr ->
-              let sck = Socket.(create ctx rep) in
-              Socket.connect sck prov_addr;
-              LwtSocket.of_socket sck
-            ) ingoing
+          let sck = Socket.(create ctx rep) in
+          Socket.connect sck listening;
+          LwtSocket.of_socket sck
         in
         let outgoing =
           List.map (fun cons_addr ->
@@ -251,15 +231,13 @@ struct
     | Some sck ->
       sck
 
-  let start_dynamic ~ingoing ~out_dispatch =
+  let start_dynamic ~listening ~out_dispatch =
     with_context (fun ctx ->
 
         let ingoing =
-          List.map (fun prov_addr ->
-              let sck = Socket.(create ctx rep) in
-              Socket.connect sck prov_addr;
-              LwtSocket.of_socket sck
-            ) ingoing
+          let sck = Socket.(create ctx rep) in
+          Socket.connect sck listening;
+          LwtSocket.of_socket sck
         in
         let table = Hashtbl.create 30 in
         let routing =
