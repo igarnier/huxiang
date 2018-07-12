@@ -24,3 +24,8 @@ sig
   val transition : state -> I.t -> (state * O.t option) Lwt.t
   
 end
+
+type ('a, 'b) sum =
+  | Inl of 'a
+  | Inr of 'b
+

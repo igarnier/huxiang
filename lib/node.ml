@@ -10,9 +10,9 @@ module Make(P : Process) =
 struct
 
   type message =
-    | Void of { nonce : int64 }
-    | Json of { json : json; nonce : int64 }
-    | Ack  of { nonce : int64 }
+    | Void of { uid : int64 }
+    | Json of { json : json; uid : int64 }
+    | Ack  of { uid : int64 }
 
   type routing =
     | Mcast   of [`Req] LwtSocket.t list
@@ -26,19 +26,19 @@ struct
       state    : P.state
     }
   
-  let get_nonce = function
-    | Void { nonce }
-    | Json { nonce }
-    | Ack  { nonce } -> nonce
+  let get_uid = function
+    | Void { uid }
+    | Json { uid }
+    | Ack  { uid } -> uid
 
   let print_msg msg =
     match msg with
-    | Void { nonce } -> 
-      Printf.sprintf "void(%Ld)" nonce
-    | Json { json; nonce } ->
-      Printf.sprintf "json(%s/%Ld)" (Json.to_string json) nonce
-    | Ack { nonce } ->
-      Printf.sprintf "ack(%Ld)" nonce
+    | Void { uid } -> 
+      Printf.sprintf "void(%Ld)" uid
+    | Json { json; uid } ->
+      Printf.sprintf "json(%s/%Ld)" (Json.to_string json) uid
+    | Ack { uid } ->
+      Printf.sprintf "ack(%Ld)" uid
   
   let bytes_of_int64 i =
     let io = IO.output_string () in
@@ -57,36 +57,36 @@ struct
       Lwt.fail_with "huxiang/node/input: input message too short"
     else
       let headr = String.head str 4 in
-      let nonce = int64_of_bytes (String.sub str 4 8) in
+      let uid = int64_of_bytes (String.sub str 4 8) in
       let tail  = String.tail str 12 in
       match headr with
       | "void" ->
-        Lwt.return (Void { nonce })
+        Lwt.return (Void { uid })
       | "json" ->
         let json = Json.from_string tail in
-        Lwt.return (Json { json; nonce })
+        Lwt.return (Json { json; uid })
       | "ackn" ->
-        Lwt.return (Ack { nonce })
+        Lwt.return (Ack { uid })
       | _ ->
         Lwt.fail (Failure "huxiang/node/input: incorrect header")
 
   let output msg =
     match msg with
-    | Void { nonce } ->
-      "void"^(bytes_of_int64 nonce)
-    | Json { json; nonce } ->
-      "json"^(bytes_of_int64 nonce)^(Json.to_string json)
-    | Ack { nonce } ->
-      "ackn"^(bytes_of_int64 nonce)
+    | Void { uid } ->
+      "void"^(bytes_of_int64 uid)
+    | Json { json; uid } ->
+      "json"^(bytes_of_int64 uid)^(Json.to_string json)
+    | Ack { uid } ->
+      "ackn"^(bytes_of_int64 uid)
 
   let read_and_ack provider =
     let%lwt str = LwtSocket.recv provider in
     let%lwt msg = input str in
     Lwt_log.log_f ~level:Debug "reader: read message %s" (print_msg msg);%lwt
     match msg with
-    | Void { nonce }
-    | Json { nonce } ->
-      let reply = Ack { nonce } in      
+    | Void { uid }
+    | Json { uid } ->
+      let reply = Ack { uid } in      
       LwtSocket.send provider (output reply);%lwt
       Lwt.return msg   
     | Ack _ ->
@@ -100,9 +100,9 @@ struct
     let%lwt msg = input str in
     Lwt_log.log ~level:Debug "writer: input parsed";%lwt
     match msg with
-    | Ack { nonce } ->
-      if not (Int64.equal nonce (get_nonce msg)) then
-        Lwt.fail_with "huxiang/node/write_and_get_acked: wrong nonce"
+    | Ack { uid } ->
+      if not (Int64.equal uid (get_uid msg)) then
+        Lwt.fail_with "huxiang/node/write_and_get_acked: wrong uid"
       else
         Lwt.return ()
     | _ ->  
@@ -122,22 +122,22 @@ struct
     in
     Lwt.return messages
 
-  (* let write_to_outgoing msgs nonce (outgoing : [`Req] LwtSocket.t list) =
+  (* let write_to_outgoing msgs uid (outgoing : [`Req] LwtSocket.t list) =
    *   Lwt_list.iter_p (fun msg ->
-   *       let m    = Json { json = P.O.to_json msg; nonce } in
+   *       let m    = Json { json = P.O.to_json msg; uid } in
    *       Lwt_list.iter_p (write_and_get_acked m) outgoing
    *     ) msgs *)
 
-  let write_to_outgoing msgs nonce routing =
+  let write_to_outgoing msgs uid routing =
     match routing with
     | Mcast outgoing ->
       Lwt_list.iter_p (fun msg ->
-          let m = Json { json = P.O.to_json msg; nonce } in
+          let m = Json { json = P.O.to_json msg; uid } in
           Lwt_list.iter_p (write_and_get_acked m) outgoing
         ) msgs
     | Dynamic table ->
       Lwt_list.iter_p (fun msg ->
-          let m = Json { json = P.O.to_json msg; nonce } in
+          let m = Json { json = P.O.to_json msg; uid } in
           write_and_get_acked m (table msg)
         ) msgs
         
@@ -169,13 +169,13 @@ struct
     loop state
 
   let writer_thread { routing; mqueue } =
-    let rec loop nonce =
+    let rec loop uid =
       Lwt_log.log ~level:Debug "writer: loop entered";%lwt
       let%lwt msgs = Lwt_mvar.take mqueue in
       Lwt_log.log ~level:Debug "writer: taken";%lwt
-      write_to_outgoing msgs nonce routing;%lwt
+      write_to_outgoing msgs uid routing;%lwt
       Lwt_log.log ~level:Debug "writer: written";%lwt
-      loop Int64.(nonce + one)
+      loop Int64.(uid + one)
     in
     match P.initial_message with
     | None ->
