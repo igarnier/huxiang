@@ -3,11 +3,9 @@ struct
   
   type t =
     | Ping of int
-  [@@deriving yojson]
+  [@@deriving eq, yojson]
 
-  let to_json = to_yojson
-
-  let from_json j =
+  let of_yojson_exn j =
     match of_yojson j with
     | Ok v      -> v
     | Error msg ->
@@ -20,11 +18,9 @@ struct
 
   type t =
     | Pong of int
-  [@@deriving yojson]
+  [@@deriving eq, yojson]
 
-  let to_json = to_yojson
-
-  let from_json j =
+  let of_yojson_exn j =
     match of_yojson j with
     | Ok v      -> v
     | Error msg ->

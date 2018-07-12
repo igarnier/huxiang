@@ -12,18 +12,25 @@ struct
     | Dead
 
   let initial_state   = Alive { counter = 0 }
+
   let initial_message = Some (O.Ping 0)
 
-  let transition state (I.Pong i) =
-    match state with
-    | Dead              -> Lwt.return (Dead, None)
-    | Alive { counter } ->
-      if i = counter then
-        let state = Alive { counter = counter + 1 } in
-        Lwt.return (state, Some (O.Ping (counter + 1)))
-      else
-        Lwt.return (Dead, None)
-      
+    let process =
+    let rec take_input =
+      Input (fun state (I.Pong i) ->
+          match state with
+          | Dead              -> Lwt.return (Dead, None, take_input)
+          | Alive { counter } ->
+            if i = counter then
+              let state = Alive { counter = counter + 1 } in
+              Lwt.return (state, Some (O.Ping (counter + 1)), take_input)
+            else
+              Lwt.return (Dead, None, take_input)
+        )
+    in
+    (* "Ping" starts to play and requires no input to do so. *)
+    NoInput (fun state -> Lwt.return (state, Some (O.Ping 0), take_input))
+              
 end
 
 module PingNode = Huxiang.Node.Make(PingProcess)

@@ -10,10 +10,11 @@ struct
   type state = unit
 
   let initial_state   = ()
-  let initial_message = None
 
-  let transition state (I.Ping i) =
-    Lwt.return (state, Some (O.Pong i))
+  let rec process =
+    Input (fun state (I.Ping i) ->
+        Lwt.return (state, Some (O.Pong i), process)
+      )
       
 end
 
