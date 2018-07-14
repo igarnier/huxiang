@@ -9,13 +9,18 @@ module Json = Yojson.Safe
 module Make(P : Process) =
 struct
 
+  type address     = string
+  type addresses   = address list
+
+  type out_dispatch = P.O.t -> address list
+
   type message =
     | Json of { json : json; uid : int64 }
     | Ack  of { uid : int64 }
-
+              
   type routing =
     | Mcast   of [`Req] LwtSocket.t list
-    | Dynamic of (P.O.t -> [`Req] LwtSocket.t)
+    | Dynamic of (P.O.t -> [`Req] LwtSocket.t list)
       
   type t =
     {
@@ -86,11 +91,10 @@ struct
 
   let write_and_get_acked msg (consumer : [`Req] LwtSocket.t) =
     LwtSocket.send consumer (output msg);%lwt
-    Lwt_log.log_f ~level:Debug "writer: output message %s sent, waiting for ack" (print_msg msg);%lwt
+    Lwt_log.log_f ~level:Debug "writer: message %s sent, waiting for ack" (print_msg msg);%lwt
     let%lwt str = LwtSocket.recv consumer in
     Lwt_log.log ~level:Debug "writer: ack received";%lwt
     let%lwt msg = input str in
-    Lwt_log.log ~level:Debug "writer: input parsed";%lwt
     match msg with
     | Ack { uid } ->
       if not (Int64.equal uid (get_uid msg)) then
@@ -105,13 +109,13 @@ struct
     Lwt.return (P.I.of_yojson_exn json)
 
   let write_to_outgoing msg uid routing =
-    match routing with
-    | Mcast outgoing ->
-      let m = Json { json = P.O.to_yojson msg; uid } in
-      Lwt_list.iter_p (write_and_get_acked m) outgoing
-    | Dynamic table ->
-      let m = Json { json = P.O.to_yojson msg; uid } in
-      write_and_get_acked m (table msg)
+    let m = Json { json = P.O.to_yojson msg; uid } in
+    let outgoing =
+      match routing with
+      | Mcast outgoing -> outgoing
+      | Dynamic table  -> table msg
+    in
+    Lwt_list.iter_p (write_and_get_acked m) outgoing
         
   let reader_thread { ingoing; mqueue; state; process } =
     let rec loop state process =
@@ -182,13 +186,13 @@ struct
 
         let ingoing =
           let sck = Socket.(create ctx rep) in
-          Socket.connect sck listening;
+          Socket.bind sck listening;
           LwtSocket.of_socket sck
         in
         let outgoing =
           List.map (fun cons_addr ->
               let sck = Socket.(create ctx req) in
-              Socket.bind sck cons_addr;
+              Socket.connect sck cons_addr;
               LwtSocket.of_socket sck
             ) outgoing
         in
@@ -218,25 +222,41 @@ struct
     match Hashtbl.find_option table address with
     | None ->
       let sck = Socket.(create ctx req) in
-      Socket.bind sck address;
+      (try Socket.connect sck address with
+       | exn ->
+         let s = Printexc.to_string exn in
+         failwith @@
+         "huxiang/node/get_socket: exception "^s^
+         " raised while binding addr "^
+         address);
       let sck = LwtSocket.of_socket sck in
       Hashtbl.add table address sck;
       sck
     | Some sck ->
       sck
 
+  (* let check_uniq l =
+   *   List.length (List.sort_uniq String.compare l) = (List.length l) *)
+
   let start_dynamic ~listening ~out_dispatch =
     with_context (fun ctx ->
-
         let ingoing =
           let sck = Socket.(create ctx rep) in
-          Socket.connect sck listening;
+          (try Socket.bind sck listening
+           with
+           | exn ->
+             let s = Printexc.to_string exn in
+             failwith @@
+             "Could not connect to address "^listening^": "^
+             "error "^s^" caught");
           LwtSocket.of_socket sck
         in
         let table = Hashtbl.create 30 in
         let routing =
-          Dynamic (fun msg -> 
-              get_socket ctx table (out_dispatch msg)
+          Dynamic (fun msg ->
+              let addresses = out_dispatch msg in
+              let sockets   = List.map (get_socket ctx table) addresses in
+              sockets
             )
         in
         let record =
@@ -261,7 +281,6 @@ struct
             )
         in        
         Lwt_main.run program
-
       )
 
 end

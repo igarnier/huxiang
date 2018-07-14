@@ -1,9 +1,13 @@
 module Make (P : Types.Process)  :
 sig
 
-  val start_mcast : listening:string -> outgoing:string list -> unit
+  type address   = string
+  type addresses = address list
 
-  (** TODO/!\: allow to dispatch on more than one address... *)
-  val start_dynamic : listening:string -> out_dispatch:(P.O.t -> string) -> unit  
+  type out_dispatch = P.O.t -> address list
+
+  val start_mcast : listening:address -> outgoing:address list -> unit
+
+  val start_dynamic : listening:address -> out_dispatch:out_dispatch -> unit  
   
 end
