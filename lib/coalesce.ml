@@ -1,3 +1,5 @@
+open Printf
+
 type identity = Left | Right
 [@@deriving show]
 
@@ -19,31 +21,31 @@ struct
   struct
 
     type left_input  = Left.I.t
-    [@@deriving eq, yojson]
+    [@@deriving eq, yojson, show]
 
     type right_input = Right.I.t
-    [@@deriving eq, yojson]
+    [@@deriving eq, yojson, show]
 
     type transition  =
       | LeftTransition  of left_input option
       | RightTransition of right_input option
-    [@@deriving eq, yojson]
+    [@@deriving eq, yojson, show]
 
     type notification = {
       p_o_l      : Leader.t;
       transition : transition
     }
-    [@@deriving eq, yojson]
+    [@@deriving eq, yojson, show]
 
     (* One constructor per party in the coalition +
        one constructor for receiving notification +
        one constructor for being elected leader. *)
     type t =
-      | Leader          of Leader.t
-      | InputForLeft    of left_input
-      | InputForRight   of right_input
-      | Notification of notification
-    [@@deriving eq, yojson]
+      | Leader        of Leader.t
+      | InputForLeft  of left_input
+      | InputForRight of right_input
+      | Notification  of notification
+    [@@deriving eq, yojson, show]
 
     (* Dynamic typing at the interface level... This innocuous looking code is
        key to the compositionality of the machines produced by the functor. 
@@ -52,10 +54,10 @@ struct
       match m with
       (* Extra messages induced by the coalescence. *)
       | Leader _
-      | Notification _ -> to_yojson m
+      | Notification _  -> to_yojson m
       (* Original messages, encoded as before! *)
-      | InputForLeft i    -> Left.I.to_yojson i
-      | InputForRight i   -> Right.I.to_yojson i
+      | InputForLeft i  -> Left.I.to_yojson i
+      | InputForRight i -> Right.I.to_yojson i
 
     let of_yojson j =
       match Left.I.of_yojson j with
@@ -69,9 +71,8 @@ struct
 
     let of_yojson_exn j =
       match of_yojson j with
-      | Ok v      -> v
-      | Error msg ->
-        failwith msg
+      | Ok v    -> v
+      | Error s -> failwith s
 
   end
 
@@ -79,20 +80,20 @@ struct
   struct
 
     type left_output   = Left.O.t
-    [@@deriving eq, yojson]
+    [@@deriving eq, yojson, show]
 
     type right_output = Right.O.t
-    [@@deriving eq, yojson]
+    [@@deriving eq, yojson, show]
 
 
     type notification = I.notification
-    [@@deriving eq, yojson]
+    [@@deriving eq, yojson, show]
 
     type t =
       | OutputFromLeft  of left_output
       | OutputFromRight of right_output
       | Notification of notification
-    [@@deriving eq, yojson]
+    [@@deriving eq, yojson, show]
 
     let to_yojson m =
       match m with
@@ -116,9 +117,8 @@ struct
 
     let of_yojson_exn j =
       match of_yojson j with
-      | Ok v      -> v
-      | Error msg ->
-        failwith msg
+      | Ok v    -> v
+      | Error s -> failwith s
 
   end
 
@@ -138,6 +138,8 @@ struct
       right  : (Right.state, Right.I.t, Right.O.t) player;
       proofs : ProofList.t
     }
+
+  let show_state { left; right; proofs } = "coalesce.show_state is opaque"
 
   let initial_state =
     {
@@ -163,8 +165,8 @@ struct
         | Some l -> l
     }
 
-  let hash_of_string x = Sodium.Hash.Bytes.to_hash (Bytes.of_string x)
-  let hash_of_bytes = Sodium.Hash.Bytes.to_hash
+  let hash_of_string x = Sodium.Hash.Bytes.digest (Bytes.of_string x)
+  let hash_of_bytes = Sodium.Hash.Bytes.digest
   let hash_to_bytes = Sodium.Hash.Bytes.of_hash
     
   let hash_player
@@ -189,18 +191,22 @@ struct
     let righth = hash_player (module Right) right in
     hash_of_bytes (Bytes.cat (hash_to_bytes lefth) (hash_to_bytes righth))
 
+  let log = Lwt_log.log_f ~level:Info
+
+  let log_s s = Lwt_log.log_f ~level:Info "%s: %s" (show_identity identity) s
+
   let validate_leadership state proof =
+    log_s "validating leadership";%lwt
     match ProofList.cons proof state.proofs with
     | None ->
       Lwt.fail_with "coalesce/validate_leadership: proof does not point to current head"
     | Some new_list ->
       let hash_of_state = hash_state state in
       if Leader.check proof hash_of_state then
-        Lwt.return { state with proofs = new_list }
+        (log_s "leadership validated";%lwt
+         Lwt.return { state with proofs = new_list })
       else
         Lwt.fail_with "coalesce/validate_leadership: proof does not check"
-
-  let log = Lwt_log.log_f ~level:Info
 
   let validate_input
       (type input) (eq : (module Types.Message with type t = input))
@@ -223,9 +229,8 @@ struct
   let play_as player =
     match player.proc, player.buff with
     | Input transition, Some msg ->
-      let this_id   = show_identity identity in
       let player_id = show_identity player.id in
-      log "%s: play %s with input enabled transition" this_id player_id;%lwt
+      log_s @@ sprintf "play %s with input enabled transition" player_id;%lwt
       (* process requires an input and we got one, perform transition *)
       let%lwt state, out_opt, proc =
         transition player.state msg
@@ -237,13 +242,10 @@ struct
        | Some out ->
          Lwt.return (Move_output(player, out)))
     | NoInput transition, _ ->
-      let this_id   = show_identity identity in
       let player_id = show_identity player.id in
-      log "%s: play %s noinput transition" this_id player_id;%lwt
+      log_s @@ sprintf "play %s noinput transition" player_id;%lwt
       (* We don't need to read anything. *)
-      let%lwt state, out_opt, proc =
-        transition player.state
-      in
+      let%lwt state, out_opt, proc = transition player.state in
       let player = { player with state; proc } in
       (match out_opt with
        | None ->
@@ -270,17 +272,17 @@ struct
         leader_transition proof state
 
       | I.InputForLeft msg ->
-        log "%s: input for left" (show_identity identity);%lwt
+        log_s "input for left";%lwt
         let%lwt left = put_message state.left msg in
         Lwt.return ({ state with left }, None, process)
 
       | I.InputForRight msg ->
-        log "%s: input for right" (show_identity identity);%lwt
+        log_s "input for right";%lwt
         let%lwt right = put_message state.right msg in
         Lwt.return ({ state with right }, None, process)
 
       | I.Notification notification ->
-        log "%s: notification" (show_identity identity);%lwt
+        log_s "%s: notification";%lwt
         notification_transition state notification
 
     end
@@ -297,45 +299,49 @@ struct
     match%lwt play_as state.left with
     | Move_output(left, output) ->
       let output_s  = Yojson.Safe.to_string (Left.O.to_yojson output) in
-      let this_id   = show_identity identity in
       let player_id = show_identity left.id in
       if left.id = identity then
-        (log "%s: played as %s, output %s" this_id player_id output_s;%lwt
+        (log_s @@ sprintf "played as %s, output %s" player_id output_s;%lwt
          let transition = I.LeftTransition left_input in
          let state      = { state with left } in
          let output     = Some (O.OutputFromLeft output) in
          Lwt.return (state, output, notify_transition proof state transition))
       else
-        (log "%s: played as %s hence no rights to output %s, reverting"
-           this_id player_id output_s;%lwt
+        (log_s @@ sprintf "played as %s hence no rights to output %s, reverting"
+           player_id output_s;%lwt
          Lwt.return (state, None, process))
     | Move_nooutput left ->
-      let this_id   = show_identity identity in
       let player_id = show_identity left.id in
-      log "%s: played as %s, no output" this_id player_id;%lwt
+      log_s @@ sprintf "played as %s, no output" player_id;%lwt
       let transition   = I.LeftTransition left_input in
       let state        = { state with left } in
       Lwt.return (state, None, notify_transition proof state transition)
     | NoMove ->
-      (match%lwt play_as state.right with
+      (log "%s: could not play as left" (show_identity identity);%lwt
+       match%lwt play_as state.right with
        | Move_output(right, output) ->
-         let this_id   = show_identity identity in
-         let player_id = show_identity right.id in
-         log "%s: played as %s" this_id player_id;%lwt
+         let output_s  = Yojson.Safe.to_string (Right.O.to_yojson output) in
+         let player_id = show_identity right.id in         
          if state.right.id = identity then
            let transition   = I.RightTransition right_input in
            let state        = { state with right } in
            let output       = Some (O.OutputFromRight output) in
+           let%lwt ()       = log_s @@ sprintf "played as %s" player_id in
            Lwt.return (state, output, notify_transition proof state transition)
          else
+           let%lwt () =
+             log_s @@ sprintf
+               "played as %s hence no rights to output %s, reverting" 
+               player_id output_s
+           in
            Lwt.return (state, None, process)
        | Move_nooutput right ->
-         log "%s: played as right" (show_identity identity);%lwt
+         log_s "played as right";%lwt
          let transition   = I.RightTransition right_input in
          let state        = { state with right } in
          Lwt.return (state, None, notify_transition proof state transition)
        | NoMove ->
-         log "%s: blocked" (show_identity identity);%lwt
+         log_s "could not play as right: blocked";%lwt
          Lwt.return (state, None, process)
       )
 
@@ -347,10 +353,8 @@ struct
       )
 
   and notification_transition state { I.p_o_l; transition } =
-    if not (Leader.check p_o_l (hash_state state)) then
-      Lwt.fail_with @@
-      "coalesce/notification_transition: incorrect proof of leadership!"
-    else match transition with
+    let%lwt state = validate_leadership state p_o_l in
+    match transition with
     | I.LeftTransition msg ->
       (validate_input (module Left.I) state.left msg;%lwt
        match%lwt play_as state.left with

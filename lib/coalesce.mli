@@ -22,11 +22,11 @@ module Prod : functor
           | InputForLeft of Left.I.t
           | InputForRight of Right.I.t
           | Notification of notification
-        val equal : t -> t -> Ppx_deriving_runtime.bool
-        val to_yojson : t -> Yojson.Safe.json
-        val of_yojson :
-          Types.json -> t Ppx_deriving_yojson_runtime.error_or
-        val of_yojson_exn : Types.json -> t
+
+        include Types.Jsonable  with type t := t
+        include Types.Equalable with type t := t
+        include Types.Showable  with type t := t
+
       end
 
     module O :
@@ -35,14 +35,16 @@ module Prod : functor
             OutputFromLeft of Left.O.t
           | OutputFromRight of Right.O.t
           | Notification of I.notification
-        val equal : t -> t -> Ppx_deriving_runtime.bool
-        val to_yojson : t -> Yojson.Safe.json
-        val of_yojson :
-          Types.json -> t Ppx_deriving_yojson_runtime.error_or
-        val of_yojson_exn : Types.json -> t
+
+        include Types.Jsonable  with type t := t
+        include Types.Equalable with type t := t
+        include Types.Showable  with type t := t
+
       end
 
     type state
+
+    val show_state : state -> string
 
     val initial_state : state
 

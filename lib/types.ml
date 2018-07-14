@@ -20,7 +20,6 @@ sig
   type t
   val to_yojson : t -> json
   val of_yojson : json -> (t, string) Result.result
-  val of_yojson_exn : json -> t
 end
 
 module type Equalable =
@@ -32,6 +31,7 @@ end
 module type Showable =
 sig
   type t
+  val pp : Format.formatter -> t -> unit
   val show : t -> string
 end
 
@@ -78,10 +78,15 @@ sig
   type t
 
   (** A proof of leadership should be hashable and equalable, with all the usal 
-      robustness assumptions on the hashing functions. *)
+      robustness assumptions on the hashing functions. We must also be able
+      to serialize it if we want to make the coalescing product iterable. *)
   include Hashable with type t := t
 
   include Equalable with type t := t
+
+  include Jsonable with type t := t
+
+  include Showable with type t := t
 
   (** To prevent reuse of proofs of leadership, we make each proof point
       to the hash of the previous one. *)
@@ -94,10 +99,5 @@ sig
       predicate which depends on some hash (typically, the hash of the state 
       of some  process). *)
   val check : t -> Sodium.Hash.hash -> bool
-
-  (** Proofs of leaderships must be serializable to json. *)
-  val to_yojson : t -> json
-  val of_yojson : json -> (t, string) Result.result
-  val of_yojson_exn : json -> t
 
 end

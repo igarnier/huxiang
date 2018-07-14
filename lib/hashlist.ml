@@ -18,7 +18,7 @@ struct
     match l with
     | [] -> Some [elt]
     | hd :: tl ->
-      if Sodium.Hash.equal (E.hash hd) (E.prev hd) then
+      if Sodium.Hash.equal (E.hash hd) (E.prev elt) then
         Some (elt :: l)
       else
         None

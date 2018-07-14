@@ -106,7 +106,12 @@ struct
         
   let read_from_ingoing ingoing =
     let%lwt json = read_and_ack ingoing in
-    Lwt.return (P.I.of_yojson_exn json)
+    match P.I.of_yojson json with
+    | Ok j ->
+      Lwt.return j
+    | Error e ->
+      Lwt.fail_with @@
+      "huxiang/node/read_from_ingoing: error in json deserialization: "^e
 
   let write_to_outgoing msg uid routing =
     let m = Json { json = P.O.to_yojson msg; uid } in
