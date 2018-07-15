@@ -8,6 +8,7 @@ struct
   module O = Messages.PongMsg
                
   type state = unit
+  [@@deriving show]
 
   let initial_state   = ()
 
@@ -27,7 +28,7 @@ let _ =
                         ~channel:Lwt_io.stderr
                         ~close_mode:`Keep
                         ());  
-  PongNode.start_mcast
+  PongNode.start_dynamic
     ~listening:"tcp://127.0.0.1:5557"
-    ~outgoing:["tcp://127.0.0.1:5556"]
+    ~out_dispatch:(fun _ -> ["tcp://127.0.0.1:5556"])
 

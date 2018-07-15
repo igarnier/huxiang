@@ -10,22 +10,20 @@ struct
   type state =
     | Alive of { counter : int }
     | Dead
+  [@@deriving show]
 
   let initial_state   = Alive { counter = 0 }
 
   let initial_message = Some (O.Ping 0)
 
-    let process =
+  let process =
     let rec take_input =
       Input (fun state (I.Pong i) ->
           match state with
-          | Dead              -> Lwt.return (Dead, None, take_input)
-          | Alive { counter } ->
-            if i = counter then
-              let state = Alive { counter = counter + 1 } in
-              Lwt.return (state, Some (O.Ping (counter + 1)), take_input)
-            else
-              Lwt.return (Dead, None, take_input)
+          | Alive { counter } when i = counter ->
+            let state = Alive { counter = counter + 1 } in
+            Lwt.return (state, Some (O.Ping (counter + 1)), take_input)
+          | _ -> Lwt.return (Dead, None, take_input)
         )
     in
     (* "Ping" starts to play and requires no input to do so. *)
@@ -42,6 +40,6 @@ let _ =
                         ~channel:Lwt_io.stderr
                         ~close_mode:`Keep
                         ());
-  PingNode.start_mcast
+  PingNode.start_dynamic
     ~listening:"tcp://127.0.0.1:5556"
-    ~outgoing:["tcp://127.0.0.1:5557"]
+    ~out_dispatch:(fun _ -> ["tcp://127.0.0.1:5557"])

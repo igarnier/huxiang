@@ -8,6 +8,38 @@ sig
   val selector : identity
 end
 
+type ('left_in, 'right_in) transition  =
+  | LeftTransition  of 'left_in option
+  | RightTransition of 'right_in option
+[@@deriving show, yojson, eq]
+
+(** A [notification] is a transition that has been played locally and a proof
+    that the issuing node had the rights to perform it. *)
+type  ('leader, 'left_in, 'right_in) notification = 
+  {
+    (** Proof of leadership. *)
+    p_o_l      : 'leader;
+
+    (** Transition to be simulated by peers. *)
+    transition : ('left_in, 'right_in) transition
+  }
+[@@deriving show, yojson, eq]
+
+(** Input of a product node. *)
+type ('leader, 'left_in, 'right_in) prod_input =
+  | Leader        of 'leader
+  | InputForLeft  of 'left_in
+  | InputForRight of 'right_in
+  | Notification  of ('leader, 'left_in, 'right_in) notification
+[@@deriving show, yojson, eq]
+
+(** Output of a product node. *)
+type ('leader, 'left_out, 'right_out, 'left_in, 'right_in) prod_output =
+  | OutputFromLeft  of 'left_out
+  | OutputFromRight of 'right_out
+  | Notification     of ('leader, 'left_in, 'right_in) notification
+[@@deriving show, yojson, eq]
+
 module Prod
     (Left : Types.Process)
     (Right : Types.Process)
@@ -20,31 +52,7 @@ struct
   module I =
   struct
 
-    type left_input  = Left.I.t
-    [@@deriving eq, yojson, show]
-
-    type right_input = Right.I.t
-    [@@deriving eq, yojson, show]
-
-    type transition  =
-      | LeftTransition  of left_input option
-      | RightTransition of right_input option
-    [@@deriving eq, yojson, show]
-
-    type notification = {
-      p_o_l      : Leader.t;
-      transition : transition
-    }
-    [@@deriving eq, yojson, show]
-
-    (* One constructor per party in the coalition +
-       one constructor for receiving notification +
-       one constructor for being elected leader. *)
-    type t =
-      | Leader        of Leader.t
-      | InputForLeft  of left_input
-      | InputForRight of right_input
-      | Notification  of notification
+    type t = (Leader.t, Left.I.t, Right.I.t) prod_input
     [@@deriving eq, yojson, show]
 
     (* Dynamic typing at the interface level... This innocuous looking code is
@@ -79,20 +87,7 @@ struct
   module O =
   struct
 
-    type left_output   = Left.O.t
-    [@@deriving eq, yojson, show]
-
-    type right_output = Right.O.t
-    [@@deriving eq, yojson, show]
-
-
-    type notification = I.notification
-    [@@deriving eq, yojson, show]
-
-    type t =
-      | OutputFromLeft  of left_output
-      | OutputFromRight of right_output
-      | Notification of notification
+    type t = (Leader.t, Left.O.t, Right.O.t, Left.I.t, Right.I.t) prod_output
     [@@deriving eq, yojson, show]
 
     let to_yojson m =
@@ -268,20 +263,20 @@ struct
   let rec process =
     Types.Input begin fun state msg ->
       match msg with
-      | I.Leader proof ->
+      | Leader proof ->
         leader_transition proof state
 
-      | I.InputForLeft msg ->
+      | InputForLeft msg ->
         log_s "input for left";%lwt
         let%lwt left = put_message state.left msg in
         Lwt.return ({ state with left }, None, process)
 
-      | I.InputForRight msg ->
+      | InputForRight msg ->
         log_s "input for right";%lwt
         let%lwt right = put_message state.right msg in
         Lwt.return ({ state with right }, None, process)
 
-      | I.Notification notification ->
+      | Notification notification ->
         log_s "%s: notification";%lwt
         notification_transition state notification
 
@@ -302,9 +297,9 @@ struct
       let player_id = show_identity left.id in
       if left.id = identity then
         (log_s @@ sprintf "played as %s, output %s" player_id output_s;%lwt
-         let transition = I.LeftTransition left_input in
+         let transition = LeftTransition left_input in
          let state      = { state with left } in
-         let output     = Some (O.OutputFromLeft output) in
+         let output     = Some (OutputFromLeft output) in
          Lwt.return (state, output, notify_transition proof state transition))
       else
         (log_s @@ sprintf "played as %s hence no rights to output %s, reverting"
@@ -313,7 +308,7 @@ struct
     | Move_nooutput left ->
       let player_id = show_identity left.id in
       log_s @@ sprintf "played as %s, no output" player_id;%lwt
-      let transition   = I.LeftTransition left_input in
+      let transition   = LeftTransition left_input in
       let state        = { state with left } in
       Lwt.return (state, None, notify_transition proof state transition)
     | NoMove ->
@@ -323,9 +318,9 @@ struct
          let output_s  = Yojson.Safe.to_string (Right.O.to_yojson output) in
          let player_id = show_identity right.id in         
          if state.right.id = identity then
-           let transition   = I.RightTransition right_input in
+           let transition   = RightTransition right_input in
            let state        = { state with right } in
-           let output       = Some (O.OutputFromRight output) in
+           let output       = Some (OutputFromRight output) in
            let%lwt ()       = log_s @@ sprintf "played as %s" player_id in
            Lwt.return (state, output, notify_transition proof state transition)
          else
@@ -337,7 +332,7 @@ struct
            Lwt.return (state, None, process)
        | Move_nooutput right ->
          log_s "played as right";%lwt
-         let transition   = I.RightTransition right_input in
+         let transition   = RightTransition right_input in
          let state        = { state with right } in
          Lwt.return (state, None, notify_transition proof state transition)
        | NoMove ->
@@ -346,16 +341,16 @@ struct
       )
 
   and notify_transition proof state transition =
-    let notification = { I.p_o_l = proof; transition } in
+    let notification = { p_o_l = proof; transition } in
     (* issue notification after having performed a transition *)
     NoInput (fun state -> 
-        Lwt.return (state, Some (O.Notification notification), process)
+        Lwt.return (state, Some (Notification notification), process)
       )
 
-  and notification_transition state { I.p_o_l; transition } =
+  and notification_transition state { p_o_l; transition } =
     let%lwt state = validate_leadership state p_o_l in
     match transition with
-    | I.LeftTransition msg ->
+    | LeftTransition msg ->
       (validate_input (module Left.I) state.left msg;%lwt
        match%lwt play_as state.left with
        | NoMove ->
@@ -375,7 +370,7 @@ struct
          let state = { state with left } in
          Lwt.return (state, None, process)
       )
-    | I.RightTransition msg ->
+    | RightTransition msg ->
       (validate_input (module Right.I) state.right msg;%lwt
        match%lwt play_as state.right with
        | NoMove ->
