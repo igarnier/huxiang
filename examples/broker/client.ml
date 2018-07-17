@@ -1,7 +1,7 @@
 open Batteries
 open Huxiang.Types
 
-module Node = Huxiang.Node.Make(Processes.Client)
+module NetworkNode = Huxiang.Node.Make(Processes.Client)
 
 let _ =
   let () = Lwt_log.add_rule "*" Lwt_log.Debug in
@@ -12,6 +12,6 @@ let _ =
                         ());
   let serv = "tcp://127.0.0.1:5556" in
   let brok = "tcp://127.0.0.1:5557" in
-  Node.start_dynamic
+  NetworkNode.start_dynamic
     ~listening:"tcp://127.0.0.1:5555"
     ~out_dispatch:(fun _ -> [serv; brok])
