@@ -1,5 +1,6 @@
 open Printf
 
+
 type identity = Left | Right
 [@@deriving show]
 
@@ -117,13 +118,20 @@ struct
 
   end
 
+  module Deque = Batteries.Deque
+
   type ('s, 'i, 'o) player =
     {
       id    : identity;
       state : 's;
       proc  : ('s, 'i, 'o) Types.t;
-      buff  : 'i option
+      buff  : 'i Deque.t
     }
+
+  let peek_buff { buff } =
+    match Deque.front buff with
+    | None          -> None
+    | Some (elt, _) -> Some elt
 
   module ProofList = Hashlist.Make(Leader)
 
@@ -143,7 +151,7 @@ struct
           id    = Left;
           state = Left.initial_state;
           proc  = Left.process;
-          buff  = None
+          buff  = Deque.empty
         };
 
       right =
@@ -151,7 +159,7 @@ struct
           id    = Right;
           state = Right.initial_state;
           proc  = Right.process;
-          buff  = None
+          buff  = Deque.empty
         };
 
       proofs = 
@@ -174,10 +182,9 @@ struct
     let module M = (val m) in
     let id    = id |> show_identity in
     let state = state |> M.show_state in
-    let buff  =
-      match buff with
-      | None   -> "none"
-      | Some i -> Printf.sprintf "some(%s)" (M.I.show i)
+    let buff  = 
+      let ls = buff  |> Deque.map M.I.show |> Deque.to_list in
+      "("^(String.concat "," ls)^")"
     in
     hash_of_string (String.concat "" [id; state; buff])
 
@@ -208,13 +215,16 @@ struct
       player
       msg =
     let module M = (val eq) in
-    if not (Batteries.Option.eq ~eq:M.equal player.buff msg) then
-      (Lwt.fail_with @@
-       "coalesce/validate_input: incorrect behaviour detected by "^
-       (show_identity player.id)^
-       "! message in buffer doesn't match notified input for transition")
-    else
+    match msg, Deque.front player.buff with
+    | Some msg, Some (elt, _) when M.equal elt msg -> 
       Lwt.return ()
+    | None, None ->
+      Lwt.return ()
+    | _ ->
+      Lwt.fail_with @@
+      "coalesce/validate_input: incorrect behaviour detected by "^
+      (show_identity player.id)^
+      "! message in buffer doesn't match notified input for transition"
 
   type ('s,'i,'o) play_outcome =
     | Move_output   of ('s,'i,'o) player * 'o
@@ -222,15 +232,15 @@ struct
     | NoMove
 
   let play_as player =
-    match player.proc, player.buff with
-    | Input transition, Some msg ->
+    match player.proc, Deque.front player.buff with
+    | Input transition, Some (msg, tail) ->
       let player_id = show_identity player.id in
       log_s @@ sprintf "play %s with input enabled transition" player_id;%lwt
       (* process requires an input and we got one, perform transition *)
       let%lwt state, out_opt, proc =
         transition player.state msg
       in
-      let player = { player with state; proc; buff = None } in
+      let player = { player with state; proc; buff = tail } in
       (match out_opt with
        | None ->
          Lwt.return (Move_nooutput player)
@@ -251,14 +261,8 @@ struct
       Lwt.return NoMove
 
   let put_message player msg =
-    match player.buff with
-    | None ->
-      Lwt.return { player with buff = Some msg }
-    | Some _ ->
-      Lwt.fail_with @@
-      "coalesce/put_message: msg for "^
-      (show_identity player.id)^
-      " received but buffer nonempty"
+    let buff = Deque.snoc player.buff msg in
+    Lwt.return { player with buff }
 
   let rec process =
     Types.Input begin fun state msg ->
@@ -289,8 +293,8 @@ struct
        player could have a different strategy). We save the inputs because
        they are consumed during successful transitions and we still need
        them  for issuing notifications. *)
-    let left_input  = state.left.buff in
-    let right_input = state.right.buff in
+    let left_input  = peek_buff state.left in
+    let right_input = peek_buff state.right in
     match%lwt play_as state.left with
     | Move_output(left, output) ->
       let output_s  = Yojson.Safe.to_string (Left.O.to_yojson output) in
