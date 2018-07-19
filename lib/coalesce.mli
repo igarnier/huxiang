@@ -59,10 +59,10 @@ type ('leader, 'left_out, 'right_out, 'left_in, 'right_in) prod_output =
     and [Right], a [Leader] module implementing proofs of leadership and an
     identity packed in [S]. It returns a [Huxiang.Types.Process] module. *)
 module Prod : functor
-  (Left : Types.Process)
-  (Right : Types.Process)
+  (Left : Process.S)
+  (Right : Process.S)
   (Leader : Types.Leadership)
   (S : Selector) -> 
-  Types.Process 
+  Process.S
   with type I.t = (Leader.t, Left.I.t, Right.I.t) prod_input
    and type O.t = (Leader.t, Left.O.t, Right.O.t, Left.I.t, Right.I.t) prod_output

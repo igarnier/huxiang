@@ -6,7 +6,7 @@ open Types
 module LwtSocket = Zmq_lwt.Socket
 module Json = Yojson.Safe
 
-module Make(P : Process) =
+module Make(P : Process.S) =
 struct
 
   type address     = string
@@ -27,8 +27,7 @@ struct
       ingoing  : [`Rep] LwtSocket.t; (* recv; send *)
       routing  : routing;
       mqueue   : P.O.t Lwt_mvar.t;
-      state    : P.state;
-      process  : (P.state, P.I.t, P.O.t) Types.t
+      process  : (module Process.S with type I.t = P.I.t and type O.t = P.O.t)
     }
   
   let get_uid = function
@@ -122,38 +121,43 @@ struct
     in
     Lwt_list.iter_p (write_and_get_acked m) outgoing
         
-  let reader_thread { ingoing; mqueue; state; process } =
-    let rec loop state process =
+  let reader_thread { ingoing; mqueue; process } =
+    let rec loop process =
       Lwt_log.log ~level:Debug "reader: loop entered";%lwt
-      let%lwt st, out, proc =
-        match process with
-        | Input transition ->
-          (let%lwt in_msg = read_from_ingoing ingoing in
-           Lwt_log.log ~level:Debug "reader: read";%lwt
-           try%lwt transition state in_msg
-           with
-           | exn ->
-             Lwt_log.log_f ~level:Debug "reader: error caught in evolve: %s" (Printexc.to_string exn);%lwt
-             Lwt.fail exn
-          )
-        | NoInput transition ->
-          (try%lwt transition state
-           with
-           | exn ->
-             Lwt_log.log_f ~level:Debug "reader: error caught in evolve: %s" (Printexc.to_string exn);%lwt
-             Lwt.fail exn
-          )
+      let continue out next = (* factorised continuation *)
+        Lwt_log.log ~level:Debug "reader: evolved";%lwt
+        (match out with
+         | None -> Lwt.return ()
+         | Some out ->
+           Lwt_mvar.put mqueue out;%lwt
+           Lwt_log.log ~level:Debug "reader: put"
+        );%lwt
+        loop next
       in
-      Lwt_log.log ~level:Debug "reader: evolved";%lwt
-      (match out with
-       | None -> Lwt.return ()
-       | Some out ->
-         Lwt_mvar.put mqueue out;%lwt
-         Lwt_log.log ~level:Debug "reader: put"
-      );%lwt
-      loop st proc
+      match Process.evolve process with
+      | Input transition ->
+        (let%lwt in_msg = read_from_ingoing ingoing in
+         Lwt_log.log ~level:Debug "reader: read";%lwt
+         let%lwt out, next =
+           try%lwt transition in_msg with
+           | exn ->
+             Lwt_log.log_f ~level:Debug "reader: error caught in evolve: %s" (Printexc.to_string exn);%lwt
+             Lwt.fail exn
+         in
+         continue out next
+        )
+      | NoInput transition ->
+        let%lwt out, next =
+          try%lwt transition with
+          | exn ->
+            Lwt_log.log_f ~level:Debug "reader: error caught in evolve: %s" (Printexc.to_string exn);%lwt
+            Lwt.fail exn
+        in
+        continue out next
+      | Stop ->
+        Lwt.return ()
     in
-    loop state process
+    loop (module P)
 
   let writer_thread { routing; mqueue } =
     let rec loop uid =
@@ -207,8 +211,7 @@ struct
             ingoing;
             routing;
             mqueue  = Lwt_mvar.create_empty ();
-            state   = P.initial_state;
-            process = P.process            
+            process = (module P)
           }
         in
         let program =
@@ -269,8 +272,7 @@ struct
             ingoing;
             routing;
             mqueue  = Lwt_mvar.create_empty ();
-            state   = P.initial_state;
-            process = P.process
+            process = (module P)
           }
         in
         let program =

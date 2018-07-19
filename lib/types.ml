@@ -1,13 +1,9 @@
 type json = Yojson.Safe.json
 
-(** The type of state machine, suitably polymorphic in underlying state, 
-    input and output. State machines are encoded as resumptions. *)
-type ('s, 'i, 'o) t =
-  | Input   of ('s -> 'i -> ('s * 'o option * ('s, 'i, 'o) t) Lwt.t)
-  (** Requires an external input before proceeding to the next state. *)
 
-  | NoInput of ('s -> ('s * 'o option * ('s, 'i, 'o) t) Lwt.t)
-  (** Doesn't require any input before proceeding to the next state. *)
+(* -------------------------------------------------------------------------- *)
+
+(** Interfaces for common operations. *)
 
 module type Hashable =
 sig
@@ -35,6 +31,37 @@ sig
   val show : t -> string
 end
 
+(* -------------------------------------------------------------------------- *)
+
+(** Type of public keys. *)
+
+type public_identity = Bytes.t
+[@@deriving eq, show]
+
+(* -------------------------------------------------------------------------- *)
+
+(** The name of a node on the network. Can be thought of as the address of
+    that node on the network. Concretely, the name is resolved to an actual
+    network address when the node is deployed (see Node.Make) *)
+type node_name = { node_name : string }
+[@@deriving eq, show]
+
+(** The name of a process. *)
+type process_name =
+  | ProcAtom    of public_identity
+  | ProcProduct of process_name list
+[@@deriving eq, show]
+
+(** Type of addresses. *)
+type address =
+  {
+    node_name   : string;
+    access_path : process_name list
+  }
+[@@deriving eq, show]
+
+(* -------------------------------------------------------------------------- *)
+
 (** Type of messages being communicated between state machines. *)
 module type Message =
 sig
@@ -45,22 +72,6 @@ sig
 
 end
 
-(** Processes are state machines (type [t]) with an initial state.  *)
-module type Process =
-sig
-
-  module I : Message
-  module O : Message
-
-  type state
-
-  val show_state : state -> string
-
-  val initial_state : state
-
-  val process : (state, I.t, O.t) t
-
-end
 
 (** In order to make the coalescent product work, one needs a way to
     designate a "leader" among all parties taking part in the coalescent

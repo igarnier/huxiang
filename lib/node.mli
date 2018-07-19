@@ -1,4 +1,4 @@
-module Make (P : Types.Process)  :
+module Make (P : Process.S)  :
 sig
 
   type address   = string
