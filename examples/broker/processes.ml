@@ -9,16 +9,20 @@ struct
 
   type state = { money : int } [@@deriving show]
 
-  let initial_state = { money = 1003 }
-
-  let rec process =
-    NoInput (fun state ->
-        if state.money > 0 then
+  let rec main_loop state =
+    Process.without_input
+      (if state.money > 0 then
           let state = { money = state.money - 1 } in
-          Lwt.return (state, Some (O.Payement 1), process)
+          Process.continue_with ~output:(O.Payement 1) state main_loop
         else
-          Lwt.return (state, None, process)
+          Process.stop state
       )
+
+  let thread =
+    {
+      Process.move = main_loop;
+      state = { money = 1003 }
+    }
 
 end
 
@@ -32,10 +36,16 @@ struct
 
   let initial_state = { money = 0 }
 
-  let rec process =
-    Input (fun state (I.BulkPayement i) ->
-        Lwt.return ({ money = state.money + i}, None, process)
+  let rec main_loop state =
+    Process.with_input (fun (I.BulkPayement i) ->
+        let state = { money = state.money + i } in
+        Process.continue_with state main_loop
       )
+
+  let thread =
+    {
+      Process.move = main_loop; state = { money = 0 }
+    }
 
 end
 
@@ -48,10 +58,8 @@ struct
 
   type state = { personal : int; flow : int } [@@deriving show]
 
-  let initial_state = { personal = 0; flow = 0 }
-
-  let rec process =
-    Input (fun state (I.Payement i) ->
+  let rec main_loop state =
+    Process.with_input (fun (I.Payement i) ->
         let state = { state with flow = state.flow + i } in
         if state.flow > 100 then
           let for_service = state.flow - 1 in
@@ -59,10 +67,16 @@ struct
           let state       = { personal = state.personal + for_me;
                               flow     = 0 }
           in
-          Lwt.return (state, Some (O.BulkPayement for_service), process)
+          let output      = O.BulkPayement for_service in
+          Process.continue_with ~output state main_loop
         else
-          Lwt.return (state, None, process)
+          Process.continue_with state main_loop
       )
+
+  let thread =
+    {
+      Process.move = main_loop; state = { personal = 0; flow = 0 }
+    }
 
 end
 

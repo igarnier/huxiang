@@ -1,7 +1,8 @@
 open Batteries
+open Huxiang
 open Huxiang.Types
 
-module PongProcess : Process =
+module PongProcess =
 struct
 
   module I = Messages.PingMsg
@@ -10,12 +11,16 @@ struct
   type state = unit
   [@@deriving show]
 
-  let initial_state   = ()
-
-  let rec process =
-    Input (fun state (I.Ping i) ->
-        Lwt.return (state, Some (O.Pong i), process)
+  let rec main_loop state =
+    Process.with_input (fun (I.Ping i) ->
+        Process.continue_with ~output:(O.Pong i) state main_loop
       )
+
+  let thread =
+    {
+      Process.move  = main_loop;
+      Process.state = ()
+    }
       
 end
 

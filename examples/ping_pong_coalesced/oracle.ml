@@ -1,7 +1,7 @@
 open Huxiang.Types
+open Huxiang
 
-
-module Oracle : Process =
+module Oracle =
 struct
 
   module I =
@@ -22,15 +22,18 @@ struct
 
   type state = unit
 
-  let initial_state = ()
-
   let show_state i = "()"
     
-  let rec process =
-    NoInput (fun state ->
-        Lwt_unix.sleep 3.0;%lwt
-        Lwt.return (state, Some (O.Leader ()), process)
-      )
+  let rec main_loop state =
+    Process.without_input
+      (Lwt_unix.sleep 3.0;%lwt
+       Process.continue_with ~output:(O.Leader ()) state main_loop)
+
+  let thread =
+    {
+      Process.move = main_loop;
+      state = ()
+    }
 
 end
 

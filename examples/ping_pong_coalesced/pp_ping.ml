@@ -2,8 +2,8 @@ open Huxiang
 
 module PingPongForPing = 
   Coalesce.Prod
-    (Ping.PingProcess)
-    (Pong.PongProcess)
+    (Processes.Ping)
+    (Processes.Pong)
     (TrivialLeader)
     (struct let selector = Coalesce.Left end)
 
@@ -20,7 +20,7 @@ let _ =
   let pingnode = "tcp://127.0.0.1:5556" in
   let pongnode = "tcp://127.0.0.1:5557" in
   let out_dispatch = function
-    | PingPongForPing.O.Notification _ -> [pongnode]
+    | Coalesce.Notification _ -> [pongnode]
     | _ (* regular outputs *) -> [pingnode; pongnode]
   in
   NetworkNode.start_dynamic
