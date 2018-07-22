@@ -180,6 +180,7 @@ struct
         in
         continue out next
       | Stop ->
+        Lwt_log.log ~level:Info "reader: Stop state reached";%lwt
         Lwt.return ()
     in
     loop (module P)

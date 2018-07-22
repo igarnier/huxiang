@@ -78,8 +78,6 @@ sig
 
   include Showable with type t := t
 
-  val elected : unit -> t Lwt.t
-
   (** To prevent reuse of proofs of leadership, we make each proof point
       to the hash of the previous one. *)
   val prev : t-> Sodium.Hash.hash
