@@ -23,7 +23,7 @@ type ('s,'i,'o) t = {
 }
 
 and ('s, 'i, 'o) transition_function =
-  's -> ('i, ('s, 'i, 'o) outcome_lwt) transition  
+  's -> ('i, ('s, 'i, 'o) outcome_lwt) transition Lwt.t
 
 and ('s, 'i, 'o) outcome_lwt = ('s, 'i, 'o) outcome Lwt.t
 
@@ -78,6 +78,9 @@ sig
   val equal_multi_dest : ('a -> 'a -> bool) ->
     'a multi_dest -> 'a multi_dest -> bool
 
+  val show_multi_dest : (Format.formatter -> 'a -> unit) ->
+    'a multi_dest -> string
+
   val pp_multi_dest : (Format.formatter -> 'a -> unit) ->
     Format.formatter -> 'a multi_dest -> unit
 
@@ -112,16 +115,16 @@ type ('a, 'b) process_module = (module S with type I.t = 'a and type O.t = 'b)
 val evolve :
   ('a, 'b) process_module ->
   ('a, ('b Address.multi_dest option * ('a, 'b) process_module) Lwt.t)
-    transition
+    transition Lwt.t
 
 val ( >>> ) :
   ('a, 'b, 'c) transition_function ->
   ('a, 'b, 'c) transition_function ->
   ('a, 'b, 'c) transition_function
 
-val with_input : ('i -> ('s, 'i, 'o) outcome_lwt) -> ('i, ('s, 'i, 'o) outcome_lwt) transition
+val with_input : ('i -> ('s, 'i, 'o) outcome_lwt) -> ('i, ('s, 'i, 'o) outcome_lwt) transition Lwt.t
 
-val without_input : ('s, 'i, 'o) outcome_lwt -> ('i, ('s, 'i, 'o) outcome_lwt) transition
+val without_input : ('s, 'i, 'o) outcome_lwt -> ('i, ('s, 'i, 'o) outcome_lwt) transition Lwt.t
 
 val stop : 's -> ('s, 'i, 'o) outcome_lwt
 

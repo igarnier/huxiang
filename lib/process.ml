@@ -15,7 +15,7 @@ type ('s,'i,'o) t = {
 }
 
 and ('s, 'i, 'o) transition_function =
-  's -> ('i, ('s, 'i, 'o) outcome_lwt) transition  
+  's -> ('i, ('s, 'i, 'o) outcome_lwt) transition Lwt.t
 
 and ('s, 'i, 'o) outcome_lwt = ('s, 'i, 'o) outcome Lwt.t
 
@@ -88,14 +88,21 @@ end
 
 type ('a, 'b) process_module = (module S with type I.t = 'a and type O.t = 'b)
 
+let with_input (f : 'i -> ('s, 'i, 'o) outcome_lwt) =
+  Lwt.return (Input f)
+
+let without_input (x : ('s, 'i, 'o) outcome_lwt) =
+  Lwt.return (NoInput x)
+
+
 let evolve
     (type i o) 
     (m : (i, o) process_module) =
   let module M = (val m) in
   let result = M.thread.move M.thread.state in
-  match result with
+  match%lwt result with
   | Input f ->
-    Input (fun i ->
+    Lwt.return (Input (fun i ->
         let%lwt { output; next } = f i in
         let module R : S with type I.t = i and type O.t = o =  
         struct
@@ -112,9 +119,9 @@ let evolve
                      and type O.t = o)
         in
         (Lwt.return (output, res))
-      )
+      ))
   | NoInput result ->
-    NoInput
+    Lwt.return (NoInput
       (let%lwt { output; next } = result in
        let module R : S with type I.t = i and type O.t = o =  
        struct
@@ -127,37 +134,31 @@ let evolve
        end
        in
        let res = (module R : S with type I.t = i and type O.t = o) in
-       Lwt.return (output, res))
+       Lwt.return (output, res)))
   | Stop ->
-    Stop
+    Lwt.return Stop
 
 let rec (>>>) p q =
   fun state ->
-    match p state with
+    match%lwt p state with
     | Input f ->
-      Input (fun i ->
+      Lwt.return (Input (fun i ->
           let%lwt { output; next } = f i in
           Lwt.return { output; 
                        next = { move  = next.move >>> q; 
                                 state = next.state } }
-        )    
+        ))
     | NoInput res ->
-      NoInput (let%lwt { output; next } = res in
+      Lwt.return (NoInput (let%lwt { output; next } = res in
                Lwt.return { output; 
                             next = { move  = next.move >>> q; 
-                                     state = next.state } })
+                                     state = next.state } }))
     | Stop ->   
       q state
 
-let with_input (f : 'i -> ('s, 'i, 'o) outcome_lwt) =
-  Input f
-
-let without_input (x : ('s, 'i, 'o) outcome_lwt) =
-  NoInput x
-
 let stop state = 
   Lwt.return { output = None; 
-               next = { move = (fun _ -> Stop); 
+               next = { move = (fun _ -> Lwt.return Stop); 
                         state } 
              }
 

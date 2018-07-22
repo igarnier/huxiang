@@ -71,7 +71,11 @@ struct
     let path, msgbytes =
       (Marshal.from_bytes bytes 0 : Process.Address.access_path * Bytes.t)
     in
-    P.I.deserialize (Bytes.to_string msgbytes) path
+    try%lwt Lwt.return (P.I.deserialize (Bytes.to_string msgbytes) path)
+    with
+    | exn ->
+      Lwt.fail_with @@ "huxiang/node/deserialize_message: error caught: "^
+                       (Printexc.to_string exn)
     
   let input str =
     if String.length str < 12 then
@@ -82,7 +86,7 @@ struct
       let tail  = String.tail str 12 in
       match headr with
       | "mesg" ->
-        let msg = deserialize_message (Bytes.of_string tail) in
+        let%lwt msg = deserialize_message (Bytes.of_string tail) in
         Lwt.return (InMsg { msg; uid })
       | "ackn" ->
         Lwt.return (Ack { uid })
@@ -145,7 +149,6 @@ struct
     let rec loop process =
       Lwt_log.log ~level:Debug "reader: loop entered";%lwt
       let continue out next = (* factorised continuation *)
-        Lwt_log.log ~level:Debug "reader: evolved";%lwt
         (match out with
          | None -> Lwt.return ()
          | Some out ->
@@ -154,8 +157,9 @@ struct
         );%lwt
         loop next
       in
-      match Process.evolve process with
+      match%lwt Process.evolve process with
       | Input transition ->
+        Lwt_log.log ~level:Debug "reader: Input transition";%lwt
         (let%lwt msg = read_from_ingoing ingoing in
          Lwt_log.log ~level:Debug "reader: read";%lwt
          let%lwt out, next =
@@ -167,6 +171,7 @@ struct
          continue out next
         )
       | NoInput transition ->
+        Lwt_log.log ~level:Debug "reader: NoInput transition";%lwt
         let%lwt out, next =
           try%lwt transition with
           | exn ->
@@ -234,8 +239,7 @@ struct
     with_context (fun ctx ->
         let ingoing =
           let sck = Socket.(create ctx rep) in
-          (try Socket.bind sck listening
-           with
+          (try Socket.bind sck listening with
            | exn ->
              let s = Printexc.to_string exn in
              failwith @@
@@ -261,6 +265,7 @@ struct
             (fun () ->
                let outgoing = Hashtbl.values table in
                let outgoing = List.of_enum outgoing in
+               Lwt_log.log ~level:Info "Shutting node down!";%lwt
                Lwt.return (close ingoing outgoing)
             )
         in        

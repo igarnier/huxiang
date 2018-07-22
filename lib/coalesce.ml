@@ -33,10 +33,10 @@ struct
     }
   [@@deriving show, eq]
 
-  type notification = [ `notification of notification_data ]
+  type leader = [ `leader of Leader.t ]
   [@@deriving show, eq]
 
-  type leader = [ `leader of Leader.t ]
+  type notification = [ `notification of notification_data ]
   [@@deriving show, eq]
 
   type left_input = [ `input_for_left of Left.I.t ]
@@ -69,7 +69,7 @@ struct
       match access_path with
       | Process.Address.Root ->
         let result =
-          (Marshal.from_bytes (Bytes.of_string bytes) 0 : [leader|notification])
+          (Marshal.from_bytes (Bytes.of_string bytes) 0 : [leader | notification])
         in
         (result :> product_input)
       | Process.Address.Access(pname, pth) ->
@@ -170,7 +170,8 @@ struct
     | NoMove
 
   let play_as player =
-    match Process.evolve player.proc, Deque.front player.buff with
+    let%lwt resumption = Process.evolve player.proc in
+    match resumption, Deque.front player.buff with
     | Input transition, Some (msg, tail) ->
       let player_id = Types.show_public_identity player.id in
       log_s @@ sprintf "play %s with input enabled transition" player_id;%lwt
@@ -235,10 +236,11 @@ struct
   let rec process state =
     Process.with_input begin function
       | `leader proof ->
+        log_s "elected as leader";%lwt
         leader_transition proof state
 
       | `notification notification ->
-        log_s "%s: notification";%lwt
+        log_s "notification";%lwt
         notification_transition notification state
 
       | `input_for_left msg ->
@@ -250,74 +252,7 @@ struct
         log_s "input for right";%lwt
         let%lwt right = put_message state.right msg in
         Process.continue_with { state with right } process
-
     end
-
-  and leader_transition proof state =
-    let%lwt state = validate_leadership state proof in
-    (* We're the leader! Perform some transition. *)
-    (* First, try to play as "Left". This is arbitrary (and in fact each
-       player could have a different strategy). We save the inputs because
-       they are consumed during successful transitions and we still need
-       them  for issuing notifications. *)
-    let left_input  = peek_buff state.left in
-    let right_input = peek_buff state.right in
-    match%lwt play_as state.left with
-    | Move_output(left, output) ->
-      let output_s  = Left.O.show output.Process.Address.msg in
-      let player_id = Types.show_public_identity left.id in
-      if Types.equal_public_identity left.id Info.owner then
-        (log_s @@ sprintf "played as %s, output %s" player_id output_s;%lwt
-         let transition = LeftTransition left_input in
-         let state      = { state with left } in
-         let output     = reroute_original_message (`output_from_left output.msg) output.dests in
-         Process.continue_with ~output state (notify_transition proof transition))
-      else
-        (log_s @@ sprintf "played as %s hence no rights to output %s, reverting"
-           player_id output_s;%lwt
-         Process.continue_with state process
-        )
-    | Move_nooutput left ->
-      let player_id = Types.show_public_identity left.id in
-      log_s @@ sprintf "played as %s, no output" player_id;%lwt
-      let transition   = LeftTransition left_input in
-      let state        = { state with left } in
-      Process.continue_with state (notify_transition proof transition)
-    | NoMove ->
-      (log "%s: could not play as left" (Types.show_public_identity Info.owner);%lwt
-       match%lwt play_as state.right with
-       | Move_output(right, output) ->
-         let output_s  = Right.O.show output.Process.Address.msg in
-         let player_id = Types.show_public_identity right.id in         
-         if Types.equal_public_identity state.right.id Info.owner then
-           let%lwt ()     = log_s @@ sprintf "played as %s" player_id in
-           let transition = RightTransition right_input in
-           let state      = { state with right } in
-           let output     = reroute_original_message (`output_from_right output.msg) output.dests in
-           Process.continue_with ~output state (notify_transition proof transition)
-         else
-           let%lwt () =
-             log_s @@ sprintf
-               "played as %s hence no rights to output %s, reverting" 
-               player_id output_s
-           in
-           Process.continue_with state process
-       | Move_nooutput right ->
-         log_s "played as right";%lwt
-         let transition   = RightTransition right_input in
-         let state        = { state with right } in
-         Process.continue_with state (notify_transition proof transition)
-       | NoMove ->
-         log_s "could not play as right: blocked";%lwt
-         Process.continue_with state process
-      )
-
-  and notify_transition proof transition = fun state ->
-    let msg    = `notification { p_o_l = proof; transition } in
-    let output = { Process.Address.msg; dests = face_addrs } in
-    (* issue notification after having performed a transition *)
-    Process.without_input
-      (Process.continue_with ~output state process)
 
   and notification_transition { p_o_l; transition } state =
     let%lwt state = validate_leadership state p_o_l in
@@ -362,6 +297,84 @@ struct
          let state = { state with right } in
          Process.continue_with state process
       )
+    
+  and leader_transition proof state =
+    let%lwt state = validate_leadership state proof in
+    (* We're the leader! Perform some transition. *)
+    (* First, try to play as "Left". This is arbitrary (and in fact each
+       player could have a different strategy). We save the inputs because
+       they are consumed during successful transitions and we still need
+       them  for issuing notifications. *)
+    let left_input  = peek_buff state.left in
+    let right_input = peek_buff state.right in
+    match%lwt play_as state.left with
+    | Move_output(left, output) ->
+      let output_s  = Left.O.show output.Process.Address.msg in
+      let player_id = Types.show_public_identity left.id in
+      if Types.equal_public_identity left.id Info.owner then
+        (log_s @@ sprintf "played as %s, output %s" player_id output_s;%lwt
+         let transition = LeftTransition left_input in
+         let state      = { state with left } in
+         let msg_before = Process.Address.show_multi_dest Left.O.pp output in
+         let output     = reroute_original_message (`output_from_left output.msg) output.dests in
+         let msg_after  = Process.Address.show_multi_dest O.pp output in
+         log_s @@ sprintf "rerouted message from %s to %s" msg_before msg_after;%lwt
+         Process.continue_with ~output state (notify_transition proof transition))
+      else
+        (log_s @@ sprintf "played as %s hence no rights to output %s, reverting"
+           player_id output_s;%lwt
+         Process.continue_with state process
+        )
+    | Move_nooutput left ->
+      let player_id = Types.show_public_identity left.id in
+      log_s @@ sprintf "played as %s, no output" player_id;%lwt
+      let transition   = LeftTransition left_input in
+      let state        = { state with left } in
+      Process.continue_with state (notify_transition proof transition)
+    | NoMove ->
+      (log "%s: could not play as left" (Types.show_public_identity Info.owner);%lwt
+       match%lwt play_as state.right with
+       | Move_output(right, output) ->
+         let output_s  = Right.O.show output.Process.Address.msg in
+         let player_id = Types.show_public_identity right.id in         
+         if Types.equal_public_identity state.right.id Info.owner then
+           let%lwt ()     = log_s @@ sprintf "played as %s" player_id in
+           let transition = RightTransition right_input in
+           let state      = { state with right } in
+           let output     = reroute_original_message (`output_from_right output.msg) output.dests in
+           Process.continue_with ~output state (notify_transition proof transition)
+         else
+           let%lwt () =
+             log_s @@ sprintf
+               "played as %s hence no rights to output %s, reverting" 
+               player_id output_s
+           in
+           Process.continue_with state process
+       | Move_nooutput right ->
+         log_s "played as right";%lwt
+         let transition   = RightTransition right_input in
+         let state        = { state with right } in
+         Process.continue_with state (notify_transition proof transition)
+       | NoMove ->
+         log_s "could not play as right: blocked";%lwt
+         Process.continue_with state process
+      )
+
+  and notify_transition proof transition = fun state ->
+    let msg    = `notification { p_o_l = proof; transition } in
+    let this_address  = { Process.Address.owner = Info.owner;
+                          pname = name
+                        }
+    in
+    let face_minus_me = 
+      List.filter (fun (addr, _) ->
+          not (Process.Address.equal addr this_address)
+        ) face_addrs
+    in
+    let output = { Process.Address.msg; dests = face_minus_me } in
+    (* issue notification after having performed a transition *)
+    Process.without_input
+      (Process.continue_with ~output state process)
 
   let thread = 
     let initial_state =
@@ -379,5 +392,28 @@ struct
       Process.move  = process
     }
 
+  (* let fork_fun =
+   *   let open Zmq in
+   *   let module LwtSocket = Zmq_lwt.Socket in
+   *   let tmp_file = Filename.temp_file "huxiang" "" in
+   *   let this_pid = Unix.fork () in
+   *   if this_pid < 0 then
+   *     failwith "coalesce: error while forking Leader process"
+   *   else if this_pid = 0 then
+   *     (\* child *\)
+   *     let ctx = Context.create () in
+   *     let sck = Socket.create ctx Socket.req in
+   *     Socket.connect sck tmp_file;
+   *     let lsk = LwtSocket.of_socket sck in
+   *     (\* do stuff*\)
+   *     while
+   *   else
+   *     (\* parent *\)
+   *     let ctx = Context.create () in
+   *     let sck = Socket.create ctx Socket.rep in
+   *     Socket.bind sck tmp_file;
+   *     let lsk = LwtSocket.of_socket sck in
+   *     failwith "" *)
+        
 
 end
