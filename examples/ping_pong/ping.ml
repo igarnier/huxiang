@@ -8,26 +8,22 @@ struct
   module I = Messages.PongMsg
   module O = Messages.PingMsg
                
-  type state =
-    | Alive of { counter : int }
-    | Dead
+  type state = { counter : int }
   [@@deriving show]
 
   let name = Process.Name.atom "ping"
 
-  let rec main_loop state =
+  let rec main_loop  { counter } =
     Process.with_input (fun (I.Pong i) ->
-        match state with
-        | Alive { counter } when i = counter ->
-          let state  = Alive { counter = counter + 1 } in
+        if i = counter then
+          let state  = { counter = counter + 1 } in
           let output =
             { Process.Address.msg = O.Ping (counter + 1); 
               dests = [ (Directory.pong_node, Root) ] }
           in
           Process.continue_with ~output state main_loop
-        | _ ->
-          let state = Dead in
-          Process.continue_with state main_loop
+        else
+          Process.stop { counter }
       )
 
   let process state =
@@ -41,7 +37,7 @@ struct
   let thread =
     {
       Process.move  = process;
-      Process.state = Alive { counter = 0 }
+      Process.state = { counter = 0 }
     }
               
 end
