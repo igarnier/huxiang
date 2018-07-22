@@ -11,9 +11,15 @@ struct
   type state = unit
   [@@deriving show]
 
+  let name = Process.Name.atom "pong"
+
   let rec main_loop state =
     Process.with_input (fun (I.Ping i) ->
-        Process.continue_with ~output:(O.Pong i) state main_loop
+        let output =
+          { Process.Address.msg  = O.Pong i; 
+            dests = [ (Directory.ping_node, Root) ] }
+        in
+        Process.continue_with ~output state main_loop
       )
 
   let thread =
@@ -35,5 +41,5 @@ let _ =
                         ());  
   PongNode.start_dynamic
     ~listening:"tcp://127.0.0.1:5557"
-    ~out_dispatch:(fun _ -> ["tcp://127.0.0.1:5556"])
+    ~network_map:(fun _ -> "tcp://127.0.0.1:5556")
 

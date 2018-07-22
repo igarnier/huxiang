@@ -2,7 +2,7 @@ open Batteries
 open Huxiang
 open Huxiang.Types
 
-module PingProcess =
+module PingProcess : Process.S =
 struct
 
   module I = Messages.PongMsg
@@ -13,20 +13,30 @@ struct
     | Dead
   [@@deriving show]
 
+  let name = Process.Name.atom "ping"
+
   let rec main_loop state =
     Process.with_input (fun (I.Pong i) ->
         match state with
         | Alive { counter } when i = counter ->
-          let state = Alive { counter = counter + 1 } in
-          Process.continue_with ~output:(O.Ping (counter + 1)) state main_loop
+          let state  = Alive { counter = counter + 1 } in
+          let output =
+            { Process.Address.msg = O.Ping (counter + 1); 
+              dests = [ (Directory.pong_node, Root) ] }
+          in
+          Process.continue_with ~output state main_loop
         | _ ->
           let state = Dead in
           Process.continue_with state main_loop
       )
 
   let process state =
+    let output =
+      { Process.Address.msg = O.Ping 0; 
+        dests = [ (Directory.pong_node, Root) ] }
+    in
     Process.without_input
-      (Process.continue_with ~output:(O.Ping 0) state main_loop)
+      (Process.continue_with ~output state main_loop)
 
   let thread =
     {
@@ -47,4 +57,4 @@ let _ =
                         ());
   PingNode.start_dynamic
     ~listening:"tcp://127.0.0.1:5556"
-    ~out_dispatch:(fun _ -> ["tcp://127.0.0.1:5557"])
+    ~network_map:(fun _ -> "tcp://127.0.0.1:5557")
