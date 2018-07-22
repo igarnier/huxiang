@@ -10,6 +10,7 @@ let _ =
                         ~channel:Lwt_io.stderr
                         ~close_mode:`Keep
                         ());
+  let serv = "tcp://127.0.0.1:5558" in
   Node.start_dynamic
     ~listening:"tcp://127.0.0.1:5557"
-    ~out_dispatch:(fun _ -> ["tcp://127.0.0.1:5558"])
+    ~network_map:(fun _ -> serv)

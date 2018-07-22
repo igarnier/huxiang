@@ -12,4 +12,4 @@ let _ =
                         ());
   Node.start_dynamic
     ~listening:"tcp://127.0.0.1:5558"
-    ~out_dispatch:(fun _ -> ["tcp://127.0.0.1:5559"])
+    ~network_map:(fun _ -> "")
