@@ -11,3 +11,4 @@ let prev i = hash ()
 let root = ()
 
 let check i state_hash = true
+

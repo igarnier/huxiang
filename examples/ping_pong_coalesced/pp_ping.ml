@@ -1,17 +1,11 @@
 open Huxiang
 
-module PingPongForPing = 
-  Coalesce.Prod
-    (Processes.Ping)
-    (Processes.Pong)
-    (TrivialLeader)
-    (struct let selector = Coalesce.Left end)
+let _ = Random.self_init ()
 
-module NetworkNode = Huxiang.Node.Make(PingPongForPing)
+module NetworkNode = Huxiang.Node.Make(Processes.PingPongForPing)
 
 let _ =
-  let _  = Printf.eprintf "Starting pp_ping\n%!" in
-  let () = Lwt_log.add_rule "*" Lwt_log.Debug in
+  let () = Lwt_log.add_rule "*" Lwt_log.Info in
   Lwt_log.default := (Lwt_log.channel
                         ~template:"$(date).$(milliseconds) [$(level)] $(message)"
                         ~channel:Lwt_io.stderr
@@ -19,13 +13,15 @@ let _ =
                         ());
   let pingnode = "tcp://127.0.0.1:5556" in
   let pongnode = "tcp://127.0.0.1:5557" in
-  let out_dispatch = function
-    | Coalesce.Notification _ -> [pongnode]
-    | _ (* regular outputs *) -> [pingnode; pongnode]
+  let network_map = function
+    | { Process.Address.owner } when owner = Directory.ping_node.owner -> pingnode
+    | { Process.Address.owner } when owner = Directory.pong_node.owner -> pongnode
+    | _ ->
+      failwith "invalid address"
   in
   NetworkNode.start_dynamic
     ~listening:pingnode
-    ~out_dispatch
+    ~network_map
 
 
 

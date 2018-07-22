@@ -2,7 +2,7 @@ open Huxiang
 
 let _ = Random.self_init ()
 
-module NetworkNode = Huxiang.Node.Make(Processes.PingPongForPong)
+module NetworkNode = Huxiang.Node.Make(Processes.EvilPingPongForPing)
 
 let _ =
   let () = Lwt_log.add_rule "*" Lwt_log.Info in
@@ -20,5 +20,8 @@ let _ =
       failwith "invalid address"
   in
   NetworkNode.start_dynamic
-    ~listening:pongnode
+    ~listening:pingnode
     ~network_map
+
+
+

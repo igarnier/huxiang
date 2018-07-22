@@ -2,41 +2,84 @@ open Batteries
 open Huxiang
 open Huxiang.Types
 
-module Ping =
+module Ping : Process.S =
 struct
 
   module I = Messages.PongMsg
   module O = Messages.PingMsg
                
-  type state =
-    | Alive of { counter : int }
-    | Dead
+  type state = { counter : int }
   [@@deriving show]
 
-  let rec main_loop state =
+  let name = Process.Name.atom "ping"
+
+  let rec main_loop { counter } =
     Process.with_input (fun (I.Pong i) ->
-        match state with
-        | Alive { counter } when i = counter ->
-          let state = Alive { counter = counter + 1 } in
-          Process.continue_with ~output:(O.Ping (counter + 1)) state main_loop
-        | _ ->
-          let state = Dead in
-          Process.continue_with state main_loop
+        if i = counter then
+          let state  = { counter = counter + 1 } in
+          let output =
+            { Process.Address.msg = O.Ping (counter + 1); 
+              dests = [ (Directory.pong_node, Root) ] }
+          in
+          Process.continue_with ~output state main_loop
+        else
+          (Lwt_io.print "ping: dead state reached";%lwt
+           Process.stop { counter })
       )
 
   let process state =
+    let output =
+      { Process.Address.msg = O.Ping 0; 
+        dests = [ (Directory.pong_node, Root) ] }
+    in
     Process.without_input
-      (Process.continue_with ~output:(O.Ping 0) state main_loop)
+      (Process.continue_with ~output state main_loop)
 
   let thread =
     {
       Process.move  = process;
-      Process.state = Alive { counter = 0 }
+      Process.state = { counter = 0 }
     }
               
 end
 
-module Pong =
+module EvilPing : Process.S =
+struct
+
+  module I = Messages.PongMsg
+  module O = Messages.PingMsg
+               
+  type state = unit
+  [@@deriving show]
+
+  let name = Process.Name.atom "ping"
+
+  let rec main_loop () =
+    Process.with_input (fun (I.Pong i) ->
+        let output =
+          { Process.Address.msg = O.Ping (Random.int 42); 
+            dests = [ (Directory.pong_node, Root) ] }
+        in
+        Process.continue_with ~output () main_loop
+      )
+
+  let process state =
+    let output =
+      { Process.Address.msg = O.Ping 0; 
+        dests = [ (Directory.pong_node, Root) ] }
+    in
+    Process.without_input
+      (Process.continue_with ~output state main_loop)
+
+  let thread =
+    {
+      Process.move  = process;
+      Process.state = ()
+    }
+              
+end
+
+module Pong : Process.S =
 struct
 
   module I = Messages.PingMsg
@@ -45,9 +88,15 @@ struct
   type state = unit
   [@@deriving show]
 
+  let name = Process.Name.atom "pong"
+
   let rec main_loop state =
     Process.with_input (fun (I.Ping i) ->
-        Process.continue_with ~output:(O.Pong i) state main_loop
+        let output =
+          { Process.Address.msg  = O.Pong i; 
+            dests = [ (Directory.ping_node, Root) ] }
+        in
+        Process.continue_with ~output state main_loop
       )
 
   let thread =
@@ -57,3 +106,36 @@ struct
     }
       
 end
+
+module PingPongForPing = 
+  Coalesce.Prod
+    (Ping)
+    (Pong)
+    (TrivialLeader)
+    (struct 
+      let left_id  = Directory.ping_node.owner
+      let right_id = Directory.pong_node.owner
+      let owner    = left_id
+    end)
+
+module EvilPingPongForPing = 
+  Coalesce.Prod
+    (EvilPing)
+    (Pong)
+    (TrivialLeader)
+    (struct 
+      let left_id  = Directory.ping_node.owner
+      let right_id = Directory.pong_node.owner
+      let owner    = left_id
+    end)
+
+module PingPongForPong = 
+  Coalesce.Prod
+    (Ping)
+    (Pong)
+    (TrivialLeader)
+    (struct 
+      let left_id  = Directory.ping_node.owner
+      let right_id = Directory.pong_node.owner
+      let owner    = right_id
+    end)
