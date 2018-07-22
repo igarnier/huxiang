@@ -1,7 +1,6 @@
 open Batteries
 open Zmq
 
-open Types
 
 module LwtSocket = Zmq_lwt.Socket
 module Json = Yojson.Safe
@@ -9,35 +8,46 @@ module Json = Yojson.Safe
 module Make(P : Process.S) =
 struct
 
-  type address     = string
-  type addresses   = address list
-
-  type out_dispatch = P.O.t -> address list
+  type network_map = Process.Address.t -> string
 
   type message =
-    | Json of { json : json; uid : int64 }
-    | Ack  of { uid : int64 }
+    | OutMsg of {
+        msg : P.O.t;
+        pth : Process.Address.access_path;
+        uid : int64
+      }
+    | InMsg of {
+        msg : P.I.t;
+        uid : int64
+      }
+    | Ack of { uid : int64 }
               
   type routing =
-    | Mcast   of [`Req] LwtSocket.t list
-    | Dynamic of (P.O.t -> [`Req] LwtSocket.t list)
+    (* | Mcast   of [`Req] LwtSocket.t list *)
+    | Dynamic of (Process.Address.t -> [`Req] LwtSocket.t)
       
   type t =
     {
       ingoing  : [`Rep] LwtSocket.t; (* recv; send *)
       routing  : routing;
-      mqueue   : P.O.t Lwt_mvar.t;
+      mqueue   : (P.O.t Process.Address.multi_dest) Lwt_mvar.t;
       process  : (module Process.S with type I.t = P.I.t and type O.t = P.O.t)
     }
-  
-  let get_uid = function
-    | Json { uid }
-    | Ack  { uid } -> uid
 
+  let get_uid = function
+    | OutMsg { uid }
+    | InMsg { uid }
+    | Ack { uid } -> uid
+    
   let print_msg msg =
     match msg with
-    | Json { json; uid } ->
-      Printf.sprintf "json(%s/%Ld)" (Json.to_string json) uid
+    | OutMsg { msg; pth; uid } ->
+      let msgs = P.O.show msg in
+      let pths = Process.Address.show_access_path pth in
+      Printf.sprintf "msg(%s/%s/%Ld)" msgs pths uid
+    | InMsg { msg; uid } ->
+      let msgs = P.I.show msg in
+      Printf.sprintf "msg(%s/%Ld)" msgs uid
     | Ack { uid } ->
       Printf.sprintf "ack(%Ld)" uid
   
@@ -52,45 +62,57 @@ struct
     else
       let io = IO.input_string s in
       IO.read_i64 io
+
+  let serialize_message (msg : P.O.t) (path : Process.Address.access_path) =
+    let msgbytes = P.O.serialize msg in
+    Bytes.to_string (Marshal.to_bytes (path, msgbytes) [])
+
+  let deserialize_message (bytes : Bytes.t) =
+    let path, msgbytes =
+      (Marshal.from_bytes bytes 0 : Process.Address.access_path * Bytes.t)
+    in
+    P.I.deserialize (Bytes.to_string msgbytes) path
     
   let input str =
     if String.length str < 12 then
       Lwt.fail_with "huxiang/node/input: input message too short"
     else
       let headr = String.head str 4 in
-      let uid = int64_of_bytes (String.sub str 4 8) in
+      let uid   = int64_of_bytes (String.sub str 4 8) in
       let tail  = String.tail str 12 in
       match headr with
-      | "json" ->
-        let json = Json.from_string tail in
-        Lwt.return (Json { json; uid })
+      | "mesg" ->
+        let msg = deserialize_message (Bytes.of_string tail) in
+        Lwt.return (InMsg { msg; uid })
       | "ackn" ->
         Lwt.return (Ack { uid })
       | _ ->
-        Lwt.fail (Failure "huxiang/node/input: incorrect header")
+        Lwt.fail_with "huxiang/node/input: incorrect header"
 
   let output msg =
     match msg with
-    | Json { json; uid } ->
-      "json"^(bytes_of_int64 uid)^(Json.to_string json)
+    | OutMsg { msg; pth; uid } ->
+      "mesg"^(bytes_of_int64 uid)^(serialize_message msg pth)
     | Ack { uid } ->
       "ackn"^(bytes_of_int64 uid)
+    | _ ->
+      failwith "huxiang/node/output: wrong message"
 
   let read_and_ack provider =
     let%lwt str = LwtSocket.recv provider in
     let%lwt msg = input str in
     Lwt_log.log_f ~level:Debug "reader: read message %s" (print_msg msg);%lwt
     match msg with
-    | Json { uid; json } ->
+    | InMsg { msg; uid } ->
       let reply = Ack { uid } in      
       LwtSocket.send provider (output reply);%lwt
-      Lwt.return json 
-    | Ack _ ->
+      Lwt.return msg
+    |  _ ->
       Lwt.fail_with "huxiang/node/read_and_ack: wrong message"
 
-  let write_and_get_acked msg (consumer : [`Req] LwtSocket.t) =
-    LwtSocket.send consumer (output msg);%lwt
-    Lwt_log.log_f ~level:Debug "writer: message %s sent, waiting for ack" (print_msg msg);%lwt
+  let write_and_get_acked out_msg (consumer : [`Req] LwtSocket.t) =
+    LwtSocket.send consumer (output out_msg);%lwt
+    Lwt_log.log_f ~level:Debug "writer: message %s sent, waiting for ack" (print_msg out_msg);%lwt
     let%lwt str = LwtSocket.recv consumer in
     Lwt_log.log ~level:Debug "writer: ack received";%lwt
     let%lwt msg = input str in
@@ -103,23 +125,21 @@ struct
     | _ ->  
       Lwt.fail_with "huxiang/node/write_and_get_acked: wrong message"
         
-  let read_from_ingoing ingoing =
-    let%lwt json = read_and_ack ingoing in
-    match P.I.of_yojson json with
-    | Ok j ->
-      Lwt.return j
-    | Error e ->
-      Lwt.fail_with @@
-      "huxiang/node/read_from_ingoing: error in json deserialization: "^e
+  let read_from_ingoing ingoing = read_and_ack ingoing
 
-  let write_to_outgoing msg uid routing =
-    let m = Json { json = P.O.to_yojson msg; uid } in
-    let outgoing =
-      match routing with
-      | Mcast outgoing -> outgoing
-      | Dynamic table  -> table msg
-    in
-    Lwt_list.iter_p (write_and_get_acked m) outgoing
+  let write_to_outgoing { Process.Address.dests; msg } uid (Dynamic table) =
+    Lwt_list.iter_p (fun (address, pth) ->
+        let socket = table address in
+        write_and_get_acked (OutMsg { msg; pth; uid }) socket
+      ) dests
+
+    (* let m = Json { json = P.O.to_yojson msg; uid } in
+     * let outgoing =
+     *   match routing with
+     *   | Mcast outgoing -> outgoing
+     *   | Dynamic table  -> List.map table dests
+     * in
+     * Lwt_list.iter_p (write_and_get_acked m) outgoing *)
         
   let reader_thread { ingoing; mqueue; process } =
     let rec loop process =
@@ -136,10 +156,10 @@ struct
       in
       match Process.evolve process with
       | Input transition ->
-        (let%lwt in_msg = read_from_ingoing ingoing in
+        (let%lwt msg = read_from_ingoing ingoing in
          Lwt_log.log ~level:Debug "reader: read";%lwt
          let%lwt out, next =
-           try%lwt transition in_msg with
+           try%lwt transition msg with
            | exn ->
              Lwt_log.log_f ~level:Debug "reader: error caught in evolve: %s" (Printexc.to_string exn);%lwt
              Lwt.fail exn
@@ -189,42 +209,6 @@ struct
         let s = LwtSocket.to_socket s in
         Socket.close s
       ) outgoing
-
-  let start_mcast ~listening ~outgoing =
-    with_context (fun ctx ->
-
-        let ingoing =
-          let sck = Socket.(create ctx rep) in
-          Socket.bind sck listening;
-          LwtSocket.of_socket sck
-        in
-        let outgoing =
-          List.map (fun cons_addr ->
-              let sck = Socket.(create ctx req) in
-              Socket.connect sck cons_addr;
-              LwtSocket.of_socket sck
-            ) outgoing
-        in
-        let routing = Mcast outgoing in
-        let record =
-          {
-            ingoing;
-            routing;
-            mqueue  = Lwt_mvar.create_empty ();
-            process = (module P)
-          }
-        in
-        let program =
-          Lwt.finalize
-            (fun () ->
-               Lwt_log.log ~level:Info "Starting node!";%lwt
-               Lwt.join [ reader_thread record;
-                          writer_thread record ])
-            (fun () -> Lwt.return (close ingoing outgoing))
-        in        
-        Lwt_main.run program
-
-      )
       
   let get_socket ctx table address =
     match Hashtbl.find_option table address with
@@ -246,7 +230,7 @@ struct
   (* let check_uniq l =
    *   List.length (List.sort_uniq String.compare l) = (List.length l) *)
 
-  let start_dynamic ~listening ~out_dispatch =
+  let start_dynamic ~listening ~network_map =
     with_context (fun ctx ->
         let ingoing =
           let sck = Socket.(create ctx rep) in
@@ -260,17 +244,10 @@ struct
           LwtSocket.of_socket sck
         in
         let table = Hashtbl.create 30 in
-        let routing =
-          Dynamic (fun msg ->
-              let addresses = out_dispatch msg in
-              let sockets   = List.map (get_socket ctx table) addresses in
-              sockets
-            )
-        in
         let record =
           {
             ingoing;
-            routing;
+            routing = Dynamic (fun x -> get_socket ctx table (network_map x));
             mqueue  = Lwt_mvar.create_empty ();
             process = (module P)
           }

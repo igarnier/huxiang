@@ -1,139 +1,115 @@
 open Printf
+open Batteries
 
-type identity = Left | Right
-[@@deriving show]
-
-module type Selector =
+module type FaceInfo =
 sig
-  val selector : identity
+  val left_id  : Types.public_identity
+  val right_id : Types.public_identity
+  val owner    : Types.public_identity
 end
-
-type ('left_in, 'right_in) transition  =
-  | LeftTransition  of 'left_in option
-  | RightTransition of 'right_in option
-[@@deriving show, yojson, eq]
-
-(** A [notification] is a transition that has been played locally and a proof
-    that the issuing node had the rights to perform it. *)
-type  ('leader, 'left_in, 'right_in) notification = 
-  {
-    (** Proof of leadership. *)
-    p_o_l      : 'leader;
-
-    (** Transition to be simulated by peers. *)
-    transition : ('left_in, 'right_in) transition
-  }
-[@@deriving show, yojson, eq]
-
-(** Input of a product node. *)
-type ('leader, 'left_in, 'right_in) prod_input =
-  | Leader        of 'leader
-  | InputForLeft  of 'left_in
-  | InputForRight of 'right_in
-  | Notification  of ('leader, 'left_in, 'right_in) notification
-[@@deriving show, yojson, eq]
-
-(** Output of a product node. *)
-type ('leader, 'left_out, 'right_out, 'left_in, 'right_in) prod_output =
-  | OutputFromLeft  of 'left_out
-  | OutputFromRight of 'right_out
-  | Notification     of ('leader, 'left_in, 'right_in) notification
-[@@deriving show, yojson, eq]
 
 module Prod
     (Left : Process.S)
     (Right : Process.S)
     (Leader : Types.Leadership)
-    (S : Selector) =
+    (Info : FaceInfo) =
 struct
 
-  let identity = S.selector
+  (* Specification of a transition that has been played locally. *)
+  type transition  =
+    | LeftTransition  of Left.I.t option
+    | RightTransition of Right.I.t option
+  [@@deriving show, eq]
+
+  (* A [notification] is a transition that has been played locally and a proof
+      that the issuing node had the rights to perform it. *)
+  type notification_data = 
+    {
+      (* Proof of leadership. *)
+      p_o_l      : Leader.t;
+      
+      (* Transition to be simulated by peers. *)
+      transition : transition
+    }
+  [@@deriving show, eq]
+
+  type notification = [ `notification of notification_data ]
+  [@@deriving show, eq]
+
+  type leader = [ `leader of Leader.t ]
+  [@@deriving show, eq]
+
+  type left_input = [ `input_for_left of Left.I.t ]
+  [@@deriving show, eq]
+
+  type right_input = [ `input_for_right of Right.I.t ]
+  [@@deriving show, eq]
+
+  type product_input =
+    [ leader | notification | left_input | right_input ]
+  [@@deriving show, eq]
+
+  type left_output = [ `output_from_left of Left.O.t ]
+  [@@deriving show, eq]
+
+  type right_output = [ `output_from_right of Right.O.t ]
+  [@@deriving show, eq]
+
+  type product_output =
+    [ notification | left_output | right_output ]
+  [@@deriving show, eq]
 
   module I =
   struct
 
-    type t = (Leader.t, Left.I.t, Right.I.t) prod_input
-    [@@deriving eq, yojson, show]
+    type t = product_input
+    [@@deriving eq, show]
 
-    (* Dynamic typing at the interface level... This innocuous looking code is
-       key to the compositionality of the machines produced by the functor. 
-       There has to be a cleaner way. *)
-    let to_yojson m =
-      match m with
-      (* Extra messages induced by the coalescence. *)
-      | Leader _
-      | Notification _  -> to_yojson m
-      (* Original messages, encoded as before! *)
-      | InputForLeft i  -> Left.I.to_yojson i
-      | InputForRight i -> Right.I.to_yojson i
-
-    let of_yojson j =
-      match Left.I.of_yojson j with
-      | Ok i    -> Ok (InputForLeft i)
-      | Error _ ->
-        (match Right.I.of_yojson j with
-         | Ok i -> Ok (InputForRight i)
-         | Error _ ->
-           of_yojson j
-        )
-
-    let of_yojson_exn j =
-      match of_yojson j with
-      | Ok v    -> v
-      | Error s -> failwith s
+    let deserialize bytes access_path =
+      match access_path with
+      | Process.Address.Root ->
+        let result =
+          (Marshal.from_bytes (Bytes.of_string bytes) 0 : [leader|notification])
+        in
+        (result :> product_input)
+      | Process.Address.Access(pname, pth) ->
+        if Process.Name.equal pname Left.name then
+          let result = Left.I.deserialize bytes pth in
+          `input_for_left result
+        else if Process.Name.equal pname Right.name then
+          let result = Right.I.deserialize bytes pth in
+          `input_for_right result
+        else
+          failwith "huxiang/coalesce/I/deserialize: input message refers to unknown process"
 
   end
 
   module O =
   struct
 
-    type t = (Leader.t, Left.O.t, Right.O.t, Left.I.t, Right.I.t) prod_output
-    [@@deriving eq, yojson, show]
+    type t = product_output
+    [@@deriving eq, show]
 
-    let to_yojson m =
-      match m with
-      (* Extra messages induced by the coalescence. *)
-      | Notification _ ->
-        to_yojson m
-      (* Original messages, encoded as before! *)
-      | OutputFromLeft o ->
-        Left.O.to_yojson o
-      | OutputFromRight o ->
-        Right.O.to_yojson o
-
-    let of_yojson j =
-      match Left.O.of_yojson j with
-      | Ok o -> Ok (OutputFromLeft o)
-      | _ ->
-        (match Right.O.of_yojson j with
-         | Ok o -> Ok (OutputFromRight o)
-         | _ ->
-           of_yojson j)
-
-    let of_yojson_exn j =
-      match of_yojson j with
-      | Ok v    -> v
-      | Error s -> failwith s
+    let serialize (msg : t) =
+      match msg with
+      | (`notification _) ->
+        Bytes.to_string (Marshal.to_bytes msg [])
+      | `output_from_left o ->
+        Left.O.serialize o
+      | `output_from_right o ->
+        Right.O.serialize o
 
   end
 
   module Deque = Batteries.Deque
 
   type ('i, 'o) player = {
-    id   : identity;
+    id   : Types.public_identity;
     proc : (module Process.S
              with type I.t = 'i 
               and type O.t = 'o);
     buff : 'i Deque.t
   }
-
-  (* type ('s, 'i, 'o) player =
-   *   {
-   *     id    : identity;
-   *     state : 's;
-   *     proc  : ('s, 'i, 'o) Types.process;
-   *     buff  : 'i Deque.t
-   *   } *)
 
   let peek_buff { buff } =
     match Deque.front buff with
@@ -145,59 +121,28 @@ struct
   type state = {
     left   : (Left.I.t, Left.O.t) player;
     right  : (Right.I.t, Right.O.t) player;
-    proofs : ProofList.t
+    proofs : Leader.t list;
   }
-
-  (* type state =
-   *   {
-   *     left   : (Left.state, Left.I.t, Left.O.t) player;
-   *     right  : (Right.state, Right.I.t, Right.O.t) player;
-   *     proofs : ProofList.t
-   *   } *)
-
-  (* type input  = I.t
-   * type output = O.t
-   * 
-   * type t = (state, input, output) Process.t *)
 
   let show_state { left; right; proofs } = "coalesce.show_state is opaque"
 
-
-  let hash_of_string x = Sodium.Hash.Bytes.digest (Bytes.of_string x)
-  let hash_of_bytes = Sodium.Hash.Bytes.digest
-  let hash_to_bytes = Sodium.Hash.Bytes.of_hash
-    
-  let hash_player
-      (type state input output)
-      ({ id; proc; buff } : (input, output) player) =
-    let module M = (val proc) in
-    let id    = id |> show_identity in
-    let state = M.show_state M.thread.state in
-    let buff  = 
-      let ls = buff  |> Deque.map M.I.show |> Deque.to_list in
-      "("^(String.concat "," ls)^")"
-    in
-    hash_of_string (String.concat "" [id; state; buff])
-
-  let hash_state { left; right } =
-    let lefth  = hash_player left in
-    let righth = hash_player right in
-    hash_of_bytes (Bytes.cat (hash_to_bytes lefth) (hash_to_bytes righth))
-
   let log = Lwt_log.log_f ~level:Info
 
-  let log_s s = Lwt_log.log_f ~level:Info "%s: %s" (show_identity identity) s
+  let log_s =
+    let owner_s = Types.show_public_identity Info.owner in
+    fun s -> Lwt_log.log_f ~level:Info "%s: %s" owner_s s
 
   let validate_leadership state proof =
     log_s "validating leadership";%lwt
-    match ProofList.cons proof state.proofs with
-    | None ->
-      Lwt.fail_with "coalesce/validate_leadership: proof does not point to current head"
-    | Some new_list ->
-      let hash_of_state = hash_state state in
-      if Leader.check proof hash_of_state then
+    match state.proofs with
+    | [] ->
+      Lwt.fail_with @@ 
+      "coalesce/validate_leadership: "^
+      "empty proof list"
+    | hd :: tl ->
+      if Leader.check proof hd then
         (log_s "leadership validated";%lwt
-         Lwt.return { state with proofs = new_list })
+         Lwt.return { state with proofs = proof :: state.proofs })
       else
         Lwt.fail_with "coalesce/validate_leadership: proof does not check"
 
@@ -205,7 +150,9 @@ struct
       (type i o)
       player
       msg =
-    let module M = (val player.proc : Process.S with type I.t = i and type O.t = o) in
+    let module M = 
+      (val player.proc : Process.S with type I.t = i and type O.t = o)
+    in
     match msg, Deque.front player.buff with
     | Some msg, Some (elt, _) when M.I.equal elt msg -> 
       Lwt.return ()
@@ -214,18 +161,18 @@ struct
     | _ ->
       Lwt.fail_with @@
       "coalesce/validate_input: incorrect behaviour detected by "^
-      (show_identity player.id)^
+      (Types.show_public_identity player.id)^
       "! message in buffer doesn't match notified input for transition"
 
   type ('s,'i,'o) play_outcome =
-    | Move_output   of ('i,'o) player * 'o
+    | Move_output   of ('i,'o) player * 'o Process.Address.multi_dest
     | Move_nooutput of ('i,'o) player
     | NoMove
 
   let play_as player =
     match Process.evolve player.proc, Deque.front player.buff with
     | Input transition, Some (msg, tail) ->
-      let player_id = show_identity player.id in
+      let player_id = Types.show_public_identity player.id in
       log_s @@ sprintf "play %s with input enabled transition" player_id;%lwt
       (* process requires an input and we got one, perform transition *)
       let%lwt out_opt, proc = transition msg in
@@ -236,7 +183,7 @@ struct
        | Some out ->
          Lwt.return (Move_output(player, out)))
     | NoInput transition, _ ->
-      let player_id = show_identity player.id in
+      let player_id = Types.show_public_identity player.id in
       log_s @@ sprintf "play %s noinput transition" player_id;%lwt
       (* We don't need to read anything. *)
       let%lwt out_opt, proc = transition in
@@ -253,24 +200,56 @@ struct
     let buff = Deque.snoc player.buff msg in
     Lwt.return { player with buff }
 
+  let name = Process.Name.prod [Left.name; Right.name]
+
+  let face_addrs =
+    let addr_left'  = { Process.Address.owner = Info.left_id; pname = name } in
+    let addr_right' = { Process.Address.owner = Info.right_id; pname = name } in
+    [ (addr_left', Process.Address.Root); (addr_right', Process.Address.Root) ]
+    
+    
+  let recompute_target_addresses =
+    (* If a dest of the message is in the face, then brodcast to the
+       whole face. *)
+    let addr_left   = { Process.Address.owner = Info.left_id; pname = Left.name } in
+    let addr_right  = { Process.Address.owner = Info.right_id; pname = Right.name } in
+    let face        = [ addr_left; addr_right ] in
+    fun dests ->
+      List.fold_left (fun acc ((addr, pth) as target) ->
+          match List.find_opt (Process.Address.equal addr) face with
+          | None ->
+            (* target of message not in [face], keep current addressing *)
+            target :: acc
+          | Some { Process.Address.pname = previous_target } ->
+            (* target of message found in [face]: dispatch to new face,
+               modifying access path. *)
+            let pth   = Process.Address.Access(previous_target, pth) in
+            let addrs = List.map (fun (addr, _) -> (addr, pth)) face_addrs in
+            addrs @ acc
+        ) [] dests
+
+  let reroute_original_message (msg : O.t) old_dests =
+    let dests = recompute_target_addresses old_dests in
+    { Process.Address.msg; dests }
+
   let rec process state =
     Process.with_input begin function
-      | Leader proof ->
+      | `leader proof ->
         leader_transition proof state
 
-      | InputForLeft msg ->
+      | `notification notification ->
+        log_s "%s: notification";%lwt
+        notification_transition notification state
+
+      | `input_for_left msg ->
         log_s "input for left";%lwt
         let%lwt left = put_message state.left msg in
         Process.continue_with { state with left } process
 
-      | InputForRight msg ->
+      | `input_for_right msg ->
         log_s "input for right";%lwt
         let%lwt right = put_message state.right msg in
         Process.continue_with { state with right } process
-
-      | Notification notification ->
-        log_s "%s: notification";%lwt
-        notification_transition notification state
 
     end
 
@@ -285,13 +264,13 @@ struct
     let right_input = peek_buff state.right in
     match%lwt play_as state.left with
     | Move_output(left, output) ->
-      let output_s  = Yojson.Safe.to_string (Left.O.to_yojson output) in
-      let player_id = show_identity left.id in
-      if left.id = identity then
+      let output_s  = Left.O.show output.Process.Address.msg in
+      let player_id = Types.show_public_identity left.id in
+      if Types.equal_public_identity left.id Info.owner then
         (log_s @@ sprintf "played as %s, output %s" player_id output_s;%lwt
          let transition = LeftTransition left_input in
          let state      = { state with left } in
-         let output     = OutputFromLeft output in
+         let output     = reroute_original_message (`output_from_left output.msg) output.dests in
          Process.continue_with ~output state (notify_transition proof transition))
       else
         (log_s @@ sprintf "played as %s hence no rights to output %s, reverting"
@@ -299,22 +278,22 @@ struct
          Process.continue_with state process
         )
     | Move_nooutput left ->
-      let player_id = show_identity left.id in
+      let player_id = Types.show_public_identity left.id in
       log_s @@ sprintf "played as %s, no output" player_id;%lwt
       let transition   = LeftTransition left_input in
       let state        = { state with left } in
       Process.continue_with state (notify_transition proof transition)
     | NoMove ->
-      (log "%s: could not play as left" (show_identity identity);%lwt
+      (log "%s: could not play as left" (Types.show_public_identity Info.owner);%lwt
        match%lwt play_as state.right with
        | Move_output(right, output) ->
-         let output_s  = Yojson.Safe.to_string (Right.O.to_yojson output) in
-         let player_id = show_identity right.id in         
-         if state.right.id = identity then
-           let%lwt ()       = log_s @@ sprintf "played as %s" player_id in
-           let transition   = RightTransition right_input in
-           let state        = { state with right } in
-           let output       = OutputFromRight output in
+         let output_s  = Right.O.show output.Process.Address.msg in
+         let player_id = Types.show_public_identity right.id in         
+         if Types.equal_public_identity state.right.id Info.owner then
+           let%lwt ()     = log_s @@ sprintf "played as %s" player_id in
+           let transition = RightTransition right_input in
+           let state      = { state with right } in
+           let output     = reroute_original_message (`output_from_right output.msg) output.dests in
            Process.continue_with ~output state (notify_transition proof transition)
          else
            let%lwt () =
@@ -334,10 +313,11 @@ struct
       )
 
   and notify_transition proof transition = fun state ->
-    let notification = { p_o_l = proof; transition } in
+    let msg    = `notification { p_o_l = proof; transition } in
+    let output = { Process.Address.msg; dests = face_addrs } in
     (* issue notification after having performed a transition *)
-    Process.without_input 
-      (Process.continue_with ~output:(Notification notification) state process)
+    Process.without_input
+      (Process.continue_with ~output state process)
 
   and notification_transition { p_o_l; transition } state =
     let%lwt state = validate_leadership state p_o_l in
@@ -348,10 +328,10 @@ struct
        | NoMove ->
          Lwt.fail_with @@
          "coalesce/notification_transition: incorrect behaviour detected! "^
-         "No transition possible for "^(show_identity state.left.id)^
+         "No transition possible for "^(Types.show_public_identity state.left.id)^
          " while notified otherwise"
        | Move_output(left, output) ->
-         if identity = Left then
+         if Types.equal_public_identity left.id Info.owner then
            Lwt.fail_with @@
            "coalesce/notification_transition: incorrect behaviour detected! "^
            "Partner must have picked a forbidden transition."
@@ -368,10 +348,10 @@ struct
        | NoMove ->
          Lwt.fail_with @@
          "coalesce/notification_transition: incorrect behaviour detected! "^
-         "No transition possible for "^(show_identity state.right.id)^
+         "No transition possible for "^(Types.show_public_identity state.right.id)^
          " while notified otherwise"
        | Move_output(right, output) ->
-         if identity = Right then
+         if Types.equal_public_identity right.id Info.owner then
            Lwt.fail_with @@
            "coalesce/notification_transition: incorrect behaviour detected! "^
            "Partner must have picked a forbidden transition."
@@ -386,9 +366,8 @@ struct
   let thread = 
     let initial_state =
       {
-        left  = { id = Left;  proc  = (module Left); buff  = Deque.empty };
-        right = { id = Right; proc  = (module Right); buff  = Deque.empty };
-
+        left   = { id = Info.left_id; proc  = (module Left); buff  = Deque.empty };
+        right  = { id = Info.right_id; proc  = (module Right); buff  = Deque.empty };
         proofs = 
           match ProofList.cons Leader.root ProofList.empty with
           | None   -> failwith "coalesce/initial_state: bug found"
@@ -400,148 +379,5 @@ struct
       Process.move  = process
     }
 
-
-  (* let rec process =
-   *   { 
-   *     Process.move = (fun state ->
-   *       Process.Input begin fun msg ->
-   *           match msg with
-   *           | Leader proof ->
-   *             leader_transition proof state
-   * 
-   *           | InputForLeft msg ->
-   *             log_s "input for left";%lwt
-   *             let%lwt left = put_message state.left msg in
-   *             Lwt.return (None, { process with Process.state = { state with left } })
-   * 
-   *           | InputForRight msg ->
-   *             log_s "input for right";%lwt
-   *             let%lwt right = put_message state.right msg in
-   *             Lwt.return (None, { process with Process.state = { state with right } })
-   * 
-   *           | Notification notification ->
-   *             log_s "%s: notification";%lwt
-   *             notification_transition state notification
-   *         end);
-   * 
-   *     state = initial_state
-   *   }
-   * 
-   * and leader_transition proof state =
-   *   let%lwt state = validate_leadership state proof in
-   *   (\* We're the leader! Perform some transition. *\)
-   *   (\* First, try to play as "Left". This is arbitrary (and in fact each
-   *      player could have a different strategy). We save the inputs because
-   *      they are consumed during successful transitions and we still need
-   *      them  for issuing notifications. *\)
-   *   let left_input  = peek_buff state.left in
-   *   let right_input = peek_buff state.right in
-   *   match%lwt play_as state.left with
-   *   | Move_output(left, output) ->
-   *     let output_s  = Yojson.Safe.to_string (Left.O.to_yojson output) in
-   *     let player_id = show_identity left.id in
-   *     if left.id = identity then
-   *       (log_s @@ sprintf "played as %s, output %s" player_id output_s;%lwt
-   *        let transition = LeftTransition left_input in
-   *        let state      = { state with left } in
-   *        let output     = Some (OutputFromLeft output) in
-   *        Lwt.return (output, notify_transition proof state transition))
-   *     else
-   *       (log_s @@ sprintf "played as %s hence no rights to output %s, reverting"
-   *          player_id output_s;%lwt
-   *        let result = { process with state } in
-   *        Lwt.return (None, result))
-   *   | Move_nooutput left ->
-   *     let player_id = show_identity left.id in
-   *     log_s @@ sprintf "played as %s, no output" player_id;%lwt
-   *     let transition   = LeftTransition left_input in
-   *     let state        = { state with left } in
-   *     Lwt.return (None, notify_transition proof state transition)
-   *   | NoMove ->
-   *     (log "%s: could not play as left" (show_identity identity);%lwt
-   *      match%lwt play_as state.right with
-   *      | Move_output(right, output) ->
-   *        let output_s  = Yojson.Safe.to_string (Right.O.to_yojson output) in
-   *        let player_id = show_identity right.id in         
-   *        if state.right.id = identity then
-   *          let transition   = RightTransition right_input in
-   *          let state        = { state with right } in
-   *          let output       = Some (OutputFromRight output) in
-   *          let%lwt ()       = log_s @@ sprintf "played as %s" player_id in
-   *          Lwt.return (output, notify_transition proof state transition)
-   *        else
-   *          let%lwt () =
-   *            log_s @@ sprintf
-   *              "played as %s hence no rights to output %s, reverting" 
-   *              player_id output_s
-   *          in
-   *          let result = { process with state } in
-   *          Lwt.return (None, result)
-   *      | Move_nooutput right ->
-   *        log_s "played as right";%lwt
-   *        let transition   = RightTransition right_input in
-   *        let state        = { state with right } in
-   *        Lwt.return (None, notify_transition proof state transition)
-   *      | NoMove ->
-   *        log_s "could not play as right: blocked";%lwt
-   *        let result = { process with state } in
-   *        Lwt.return (None, result)
-   *     )
-   * 
-   * and notify_transition proof state transition =
-   *   let notification = { p_o_l = proof; transition } in
-   *   (\* issue notification after having performed a transition *\)
-   *   {
-   *     Process.move = (fun state ->
-   *         Process.NoInput
-   *           (Lwt.return (Some (Notification notification), { process with state }));
-   *       );
-   *     state
-   *   }
-   * 
-   * and notification_transition state { p_o_l; transition } =
-   *   let%lwt state = validate_leadership state p_o_l in
-   *   match transition with
-   *   | LeftTransition msg ->
-   *     (validate_input state.left msg;%lwt
-   *      match%lwt play_as state.left with
-   *      | NoMove ->
-   *        Lwt.fail_with @@
-   *        "coalesce/notification_transition: incorrect behaviour detected! "^
-   *        "No transition possible for "^(show_identity state.left.id)^
-   *        " while notified otherwise"
-   *      | Move_output(left, output) ->
-   *        if identity = Left then
-   *          Lwt.fail_with @@
-   *          "coalesce/notification_transition: incorrect behaviour detected! "^
-   *          "Partner must have picked a forbidden transition."
-   *        else
-   *          let result = { process with state = { state with left } } in
-   *          Lwt.return (None, result)
-   *      | Move_nooutput left ->
-   *        let result = { process with state = { state with left } } in
-   *        Lwt.return (None, result)
-   *     )
-   *   | RightTransition msg ->
-   *     (validate_input state.right msg;%lwt
-   *      match%lwt play_as state.right with
-   *      | NoMove ->
-   *        Lwt.fail_with @@
-   *        "coalesce/notification_transition: incorrect behaviour detected! "^
-   *        "No transition possible for "^(show_identity state.right.id)^
-   *        " while notified otherwise"
-   *      | Move_output(right, output) ->
-   *        if identity = Right then
-   *          Lwt.fail_with @@
-   *          "coalesce/notification_transition: incorrect behaviour detected! "^
-   *          "Partner must have picked a forbidden transition."
-   *        else
-   *          let result = { process with state = { state with right } } in
-   *          Lwt.return (None, result)
-   *      | Move_nooutput right ->
-   *        let state = { state with right } in
-   *        let result = { process with state = { state with right } } in
-   *        Lwt.return (None, result)
-   *     ) *)
 
 end

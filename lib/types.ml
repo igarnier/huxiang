@@ -40,38 +40,17 @@ type public_identity = Bytes.t
 
 (* -------------------------------------------------------------------------- *)
 
-(** The name of a node on the network. Can be thought of as the address of
-    that node on the network. Concretely, the name is resolved to an actual
-    network address when the node is deployed (see Node.Make) *)
-type node_name = { node_name : string }
-[@@deriving eq, show]
-
-(** The name of a process. *)
-type process_name =
-  | ProcAtom    of public_identity
-  | ProcProduct of process_name list
-[@@deriving eq, show]
-
-(** Type of addresses. *)
-type address =
-  {
-    node_name   : string;
-    access_path : process_name list
-  }
-[@@deriving eq, show]
-
-(* -------------------------------------------------------------------------- *)
-
 (** Type of messages being communicated between state machines. *)
 module type Message =
 sig
 
-  include Jsonable
+  type t
+
+  (* include Jsonable  with type t := t *)
   include Equalable with type t := t
   include Showable  with type t := t
 
 end
-
 
 (** In order to make the coalescent product work, one needs a way to
     designate a "leader" among all parties taking part in the coalescent
@@ -109,6 +88,6 @@ sig
   (** Validity ("appendability") of a proof depends on the satisfaction of a
       predicate which depends on some hash (typically, the hash of the state 
       of some  process). *)
-  val check : t -> Sodium.Hash.hash -> bool
+  val check : t -> t -> bool
 
 end

@@ -1,13 +1,10 @@
 module Make (P : Process.S)  :
 sig
 
-  type address   = string
-  type addresses = address list
+  type network_map = Process.Address.t -> string
 
-  type out_dispatch = P.O.t -> address list
+  (* val start_mcast : listening:address -> outgoing:address list -> unit *)
 
-  val start_mcast : listening:address -> outgoing:address list -> unit
-
-  val start_dynamic : listening:address -> out_dispatch:out_dispatch -> unit  
+  val start_dynamic : listening:string -> network_map:network_map -> unit  
   
 end

@@ -1,19 +1,10 @@
 open Types
 
-(** The type of state machine, suitably polymorphic in underlying state, 
-    input and output. State machines are encoded as resumptions. *)
 
-(** Transitions are either requiring an input ([Input]) or requiring no input
-    ([NoInput]). A process can also [Stop]. *)
-type ('i,'o) transition =
+type ('i, 'o) transition =
   | Input of ('i -> 'o)
-  (** Requires an external input before proceeding to the next state. *)
-
   | NoInput of 'o
-  (** Doesn't require any input before proceeding to the next state. *)
-
   | Stop
-  (** Final state of the process. *)
 
 (** The "state" of a machine is in fact divided in two parts:
     the usal part (component [state]) and the input/noinput
@@ -35,25 +26,71 @@ and ('s, 'i, 'o) outcome =
   }
 
 
-(** Processes are state machines with specified messages as inputs and 
-    outputs.  *)
-module type S =
-sig
+module Name =
+struct
 
-  module I : Message
-  module O : Message
+  type t =
+    | ProcName_Atom of string
+    | ProcName_Prod of t list
+  [@@deriving show, eq]
 
-  type state
-
-  val show_state : state -> string
-
-  val thread : (state, I.t, O.t) t
+  let atom x = ProcName_Atom x
+  let prod x = ProcName_Prod x
 
 end
 
+module Address =
+struct
+
+  type t =
+    {
+      owner : Types.public_identity;
+      pname : Name.t
+    }
+  [@@deriving show, eq]
+
+  type access_path =
+    | Root
+    | Access of Name.t * access_path
+  [@@deriving show, eq]
+
+  type 'a multi_dest = {
+    dests : (t * access_path) list;
+    msg   : 'a
+  }
+  [@@deriving show, eq]
+
+  type 'a prov = {
+    path : access_path;
+    msg  : 'a
+  }
+  [@@deriving show, eq]
+
+end
+
+module type S =
+sig
+  module I : sig 
+    include Types.Equalable 
+    include Types.Showable with type t := t
+    val deserialize : string -> Address.access_path -> t
+  end
+  module O : sig
+    include Types.Equalable 
+    include Types.Showable with type t := t
+    val serialize : t -> string
+  end
+  type state
+  val show_state : state -> string
+  val name   : Name.t
+  val thread : (state, I.t, O.t Address.multi_dest) t
+end
+
+type ('a, 'b) process_module = (module S with type I.t = 'a and type O.t = 'b)
+
 let evolve
     (type i o) 
-    (m : (module S with type I.t = i and type O.t = o)) =
+    (m : (i, o) process_module) =
   let module M = (val m) in
   let result = M.thread.move M.thread.state in
   match result with
@@ -66,6 +103,7 @@ let evolve
           module O = M.O
           type state = M.state
           let show_state = M.show_state
+          let name   = M.name
           let thread = next
         end
         in
@@ -84,6 +122,7 @@ let evolve
          module O = M.O
          type state = M.state
          let show_state = M.show_state
+         let name   = M.name
          let thread = next
        end
        in
@@ -92,7 +131,6 @@ let evolve
   | Stop ->
     Stop
 
-(** Executes p until Stop, then q *)  
 let rec (>>>) p q =
   fun state ->
     match p state with
