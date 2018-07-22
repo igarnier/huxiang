@@ -351,7 +351,7 @@ struct
            in
            Process.continue_with state process
        | Move_nooutput right ->
-         log_s "played as right";%lwt
+         log_s "played as right, no output";%lwt
          let transition   = RightTransition right_input in
          let state        = { state with right } in
          Process.continue_with state (notify_transition proof transition)
@@ -372,6 +372,8 @@ struct
         ) face_addrs
     in
     let output = { Process.Address.msg; dests = face_minus_me } in
+    (* let msg_s  = Process.Address.show_multi_dest O.pp output in
+     * log_s @@ sprintf "notification message: %s" msg_s;%lwt *)
     (* issue notification after having performed a transition *)
     Process.without_input
       (Process.continue_with ~output state process)

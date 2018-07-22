@@ -115,7 +115,13 @@ struct
       Lwt.fail_with "huxiang/node/read_and_ack: wrong message"
 
   let write_and_get_acked out_msg (consumer : [`Req] LwtSocket.t) =
-    LwtSocket.send consumer (output out_msg);%lwt
+    let%lwt serialized = 
+      try%lwt Lwt.return (output out_msg)
+      with exn ->
+        (Lwt_log.log_f ~level:Debug "writer: error caught during serialization: %s" (Printexc.to_string exn);%lwt
+         Lwt.fail exn)
+    in
+    LwtSocket.send consumer serialized;%lwt
     Lwt_log.log_f ~level:Debug "writer: message %s sent, waiting for ack" (print_msg out_msg);%lwt
     let%lwt str = LwtSocket.recv consumer in
     Lwt_log.log ~level:Debug "writer: ack received";%lwt
@@ -133,7 +139,13 @@ struct
 
   let write_to_outgoing { Process.Address.dests; msg } uid (Dynamic table) =
     Lwt_list.iter_p (fun (address, pth) ->
-        let socket = table address in
+        let%lwt socket = 
+          try%lwt Lwt.return (table address)
+          with
+          | exn ->
+            (Lwt_log.log_f ~level:Debug "writer: error network table computation: %s" (Printexc.to_string exn);%lwt
+             Lwt.fail exn)
+        in
         write_and_get_acked (OutMsg { msg; pth; uid }) socket
       ) dests
 
