@@ -68,6 +68,18 @@ struct
 
 end
 
+let (@) msg addr =
+  Address.({ msg; dests = [(addr, Root)] })
+
+let (@.) msg dest =
+  Address.({ msg; dests = [dest] })
+
+let (@+) msg dests =
+  Address.({ msg; dests })
+
+let (-->) name ap =
+  Address.Access(name, ap)
+
 module type S =
 sig
   module I : sig 

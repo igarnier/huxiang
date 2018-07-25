@@ -86,6 +86,21 @@ sig
 
 end
 
+(** Syntactic sugar to create addressed output messages 
+    (type  Address.multi_dest). *)
+
+(* [msg @ addr] creates a message { msg; dests = [addr,Root]}. *)
+val (@) : 'a -> Address.t -> 'a Address.multi_dest
+
+(* [msg @ (addr, path)] creates a message { msg; dests = [addr,path]}. *)
+val (@.) : 'a -> Address.t * Address.access_path -> 'a Address.multi_dest
+
+(* [msg @ dests] creates a message { msg; dests }. *)
+val (@+) : 'a -> (Address.t * Address.access_path) list -> 'a Address.multi_dest
+
+(** Syntactic sugar for access paths. *)
+val (-->) : Name.t -> Address.access_path -> Address.access_path
+
 
 (** Processes are state machines with specified messages as inputs and 
     outputs.  *)
