@@ -17,10 +17,7 @@ struct
     Process.with_input (fun (I.Pong i) ->
         if i = counter then
           let state  = { counter = counter + 1 } in
-          let output =
-            { Process.Address.msg = O.Ping (counter + 1); 
-              dests = [ (Directory.pong_node, Root) ] }
-          in
+          let output = Process.(O.Ping state.counter @ Directory.pong_node) in
           Process.continue_with ~output state main_loop
         else
           (Lwt_io.print "ping: dead state reached";%lwt
@@ -28,10 +25,7 @@ struct
       )
 
   let process state =
-    let output =
-      { Process.Address.msg = O.Ping 0; 
-        dests = [ (Directory.pong_node, Root) ] }
-    in
+    let output = Process.(O.Ping 0 @ Directory.pong_node) in
     Process.without_input
       (Process.continue_with ~output state main_loop)
 
@@ -56,18 +50,12 @@ struct
 
   let rec main_loop () =
     Process.with_input (fun (I.Pong i) ->
-        let output =
-          { Process.Address.msg = O.Ping (Random.int 42); 
-            dests = [ (Directory.pong_node, Root) ] }
-        in
+        let output = Process.(O.Ping (Random.int 42) @ Directory.pong_node) in
         Process.continue_with ~output () main_loop
       )
 
   let process state =
-    let output =
-      { Process.Address.msg = O.Ping 0; 
-        dests = [ (Directory.pong_node, Root) ] }
-    in
+    let output = Process.(O.Ping 0 @ Directory.pong_node) in
     Process.without_input
       (Process.continue_with ~output state main_loop)
 
@@ -92,10 +80,7 @@ struct
 
   let rec main_loop state =
     Process.with_input (fun (I.Ping i) ->
-        let output =
-          { Process.Address.msg  = O.Pong i; 
-            dests = [ (Directory.ping_node, Root) ] }
-        in
+        let output = Process.(O.Pong i @ Directory.ping_node) in
         Process.continue_with ~output state main_loop
       )
 

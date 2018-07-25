@@ -15,18 +15,12 @@ struct
 
   let rec main_loop () =
     Process.with_input (fun (I.Pong i) ->
-        let output =
-          { Process.Address.msg = O.Ping (Random.int 42); 
-            dests = [ (Directory.pong_node, Root) ] }
-        in
+        let output = Process.(O.Ping (Random.int 42) @ Directory.pong_node) in
         Process.continue_with ~output () main_loop
       )
 
   let process state =
-    let output =
-      { Process.Address.msg = O.Ping 0; 
-        dests = [ (Directory.pong_node, Root) ] }
-    in
+    let output = Process.(O.Ping 0 @ Directory.pong_node) in
     Process.without_input
       (Process.continue_with ~output state main_loop)
 

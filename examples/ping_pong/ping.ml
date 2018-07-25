@@ -17,20 +17,14 @@ struct
     Process.with_input (fun (I.Pong i) ->
         if i = counter then
           let state  = { counter = counter + 1 } in
-          let output =
-            { Process.Address.msg = O.Ping (counter + 1); 
-              dests = [ (Directory.pong_node, Root) ] }
-          in
+          let output = Process.(O.Ping (counter+1) @ Directory.pong_node) in
           Process.continue_with ~output state main_loop
         else
           Process.stop { counter }
       )
 
   let process state =
-    let output =
-      { Process.Address.msg = O.Ping 0; 
-        dests = [ (Directory.pong_node, Root) ] }
-    in
+    let output = Process.(O.Ping 0 @ Directory.pong_node) in
     Process.without_input
       (Process.continue_with ~output state main_loop)
 
@@ -47,7 +41,7 @@ module PingNode = Huxiang.Node.Make(PingProcess)
 let _ =
   let () = Lwt_log.add_rule "*" Lwt_log.Debug in
   Lwt_log.default := (Lwt_log.channel
-                        ~template:"$(date).$(milliseconds) [$(level)] $(message)"
+                        ~template:"[$(level)] $(message)"
                         ~channel:Lwt_io.stderr
                         ~close_mode:`Keep
                         ());

@@ -16,11 +16,8 @@ struct
       (Lwt_unix.sleep 1.0;%lwt
        Lwt_io.printf "money left: %d\n" state.money;%lwt
        if state.money > 0 then
-         let state = { money = state.money - 1 } in
-         let output = {
-           Process.Address.msg = O.Payement 1;
-           dests = [ (Directory.broker_node, Root) ]
-         } in
+         let state  = { money = state.money - 1 } in
+         let output = Process.(O.Payement 1 @ Directory.broker_node) in
          Process.continue_with ~output state main_loop
        else
          Process.stop state
@@ -49,13 +46,15 @@ struct
       (Lwt_unix.sleep 1.0;%lwt
        Lwt_io.printf "client: money left: %d\n" state.money;%lwt
        if state.money > 0 then
-         let state = { money = state.money - 1 } in
-         let output = {
-           Process.Address.msg = O.Payement 1;
-           dests = [ (Directory.broker_node, Access(Directory.broker_node.pname, Root));
-                     (Directory.service_node, Access(Directory.broker_node.pname, Root));
-                   ]
-         } in
+         let state  = { money = state.money - 1 } in
+         let output = Process.(
+             O.Payement 1 @+
+             [ (Directory.broker_node_product, 
+                Directory.broker_node.pname --> Root);
+               (Directory.service_node_product, 
+                Directory.broker_node.pname --> Root) ]
+           )
+         in
          Process.continue_with ~output state main_loop
        else
          Process.stop state
@@ -80,10 +79,14 @@ struct
 
   let name = Process.Name.atom "service"
 
+  let service_msg bulk state =
+    Lwt_io.printf "service: got bulk payement: %d, total = %d\n" 
+      bulk state.money
+
   let rec main_loop state =
     Process.with_input (fun (I.BulkPayement i) ->
         let state = { money = state.money + i } in
-        Lwt_io.printf "service: got bulk payement: %d, total = %d\n" i state.money;%lwt
+        service_msg i state;%lwt
         Process.continue_with state main_loop
       )
 
@@ -105,20 +108,22 @@ struct
 
   let name = Process.Name.atom "broker"
 
+  let broker_msg payement state =
+    Lwt_io.printf
+      "broker: got payement: %d, flow = %d, personal = %d\n" 
+      payement state.flow state.personal
+
   let rec main_loop state =
     Process.with_input (fun (I.Payement i) ->
-        Lwt_io.printf "broker: got payement: %d, flow = %d, personal = %d\n" i state.flow state.personal;%lwt
+        broker_msg i state;%lwt
         let state = { state with flow = state.flow + i } in
         if state.flow > 10 then
-          let for_service = state.flow - 1 in
-          let for_me      = 1 in
+          let for_service = state.flow - 1 and for_me = 1 in
           let state       = { personal = state.personal + for_me;
-                              flow     = 0 }
+                              flow     = 0 } in
+          let output = 
+            Process.(O.BulkPayement for_service @ Directory.service_node)
           in
-          let output = {
-            Process.Address.msg = O.BulkPayement for_service;
-            dests = [ (Directory.service_node, Root) ]
-          } in
           Process.continue_with ~output state main_loop
         else
           Process.continue_with state main_loop
