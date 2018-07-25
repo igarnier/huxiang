@@ -40,18 +40,6 @@ type public_identity = Bytes.t
 
 (* -------------------------------------------------------------------------- *)
 
-(** Type of messages being communicated between state machines. *)
-module type Message =
-sig
-
-  type t
-
-  (* include Jsonable  with type t := t *)
-  include Equalable with type t := t
-  include Showable  with type t := t
-
-end
-
 (** In order to make the coalescent product work, one needs a way to
     designate a "leader" among all parties taking part in the coalescent
     product. A proof of leadership accompanies all meta-transitions

@@ -21,3 +21,6 @@ parties to form self-monitoring nodes, in a fashion not unsimilar to the idea
 of smart contracts.
 
 FAQ: why the name? I find the character 互 very cool.
+
+TODO:
+* move serialization/deserialization in type Message

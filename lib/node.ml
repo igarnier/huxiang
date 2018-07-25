@@ -169,7 +169,7 @@ struct
         );%lwt
         loop next
       in
-      match%lwt Process.evolve process with
+      match Process.evolve process with
       | Input transition ->
         Lwt_log.log ~level:Debug "reader: Input transition";%lwt
         (let%lwt msg = read_from_ingoing ingoing in

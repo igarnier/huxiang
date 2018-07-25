@@ -15,16 +15,13 @@ type ('s,'i,'o) t = {
 }
 
 and ('s, 'i, 'o) transition_function =
-  's -> ('i, ('s, 'i, 'o) outcome_lwt) transition Lwt.t
-
-and ('s, 'i, 'o) outcome_lwt = ('s, 'i, 'o) outcome Lwt.t
+  's -> ('i, ('s, 'i, 'o) outcome Lwt.t) transition
 
 and ('s, 'i, 'o) outcome =
   {
     output : 'o option;
     next   : ('s, 'i, 'o) t
   }
-
 
 module Name =
 struct
@@ -80,31 +77,38 @@ let (@+) msg dests =
 let (-->) name ap =
   Address.Access(name, ap)
 
+module type Message =
+sig
+
+  type t
+
+  include Types.Equalable with type t := t
+  include Types.Showable  with type t := t
+  val serialize : t -> string
+  val deserialize : string -> Address.access_path -> t
+
+end
+
 module type S =
 sig
-  module I : sig 
-    include Types.Equalable 
-    include Types.Showable with type t := t
-    val deserialize : string -> Address.access_path -> t
-  end
-  module O : sig
-    include Types.Equalable 
-    include Types.Showable with type t := t
-    val serialize : t -> string
-  end
+
+  module I : Message
+  module O : Message
+
   type state
   val show_state : state -> string
   val name   : Name.t
   val thread : (state, I.t, O.t Address.multi_dest) t
+
 end
 
 type ('a, 'b) process_module = (module S with type I.t = 'a and type O.t = 'b)
 
-let with_input (f : 'i -> ('s, 'i, 'o) outcome_lwt) =
-  Lwt.return (Input f)
+let with_input (f : 'i -> ('s, 'i, 'o) outcome Lwt.t) =
+  Input f
 
-let without_input (x : ('s, 'i, 'o) outcome_lwt) =
-  Lwt.return (NoInput x)
+let without_input (x : ('s, 'i, 'o) outcome Lwt.t) =
+  NoInput x
 
 
 let evolve
@@ -112,9 +116,9 @@ let evolve
     (m : (i, o) process_module) =
   let module M = (val m) in
   let result = M.thread.move M.thread.state in
-  match%lwt result with
+  match result with
   | Input f ->
-    Lwt.return (Input (fun i ->
+    Input (fun i ->
         let%lwt { output; next } = f i in
         let module R : S with type I.t = i and type O.t = o =  
         struct
@@ -131,9 +135,9 @@ let evolve
                      and type O.t = o)
         in
         (Lwt.return (output, res))
-      ))
+      )
   | NoInput result ->
-    Lwt.return (NoInput
+    NoInput
       (let%lwt { output; next } = result in
        let module R : S with type I.t = i and type O.t = o =  
        struct
@@ -146,31 +150,31 @@ let evolve
        end
        in
        let res = (module R : S with type I.t = i and type O.t = o) in
-       Lwt.return (output, res)))
+       Lwt.return (output, res))
   | Stop ->
-    Lwt.return Stop
+    Stop
 
 let rec (>>>) p q =
   fun state ->
-    match%lwt p state with
+    match p state with
     | Input f ->
-      Lwt.return (Input (fun i ->
+      Input (fun i ->
           let%lwt { output; next } = f i in
           Lwt.return { output; 
                        next = { move  = next.move >>> q; 
                                 state = next.state } }
-        ))
+        )
     | NoInput res ->
-      Lwt.return (NoInput (let%lwt { output; next } = res in
+      NoInput (let%lwt { output; next } = res in
                Lwt.return { output; 
                             next = { move  = next.move >>> q; 
-                                     state = next.state } }))
-    | Stop ->   
+                                     state = next.state } })
+    | Stop ->
       q state
 
 let stop state = 
   Lwt.return { output = None; 
-               next = { move = (fun _ -> Lwt.return Stop); 
+               next = { move = (fun _ -> Stop); 
                         state } 
              }
 

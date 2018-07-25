@@ -23,9 +23,7 @@ type ('s,'i,'o) t = {
 }
 
 and ('s, 'i, 'o) transition_function =
-  's -> ('i, ('s, 'i, 'o) outcome_lwt) transition Lwt.t
-
-and ('s, 'i, 'o) outcome_lwt = ('s, 'i, 'o) outcome Lwt.t
+  's -> ('i, ('s, 'i, 'o) outcome Lwt.t) transition
 
 and ('s, 'i, 'o) outcome =
   {
@@ -102,26 +100,33 @@ val (@+) : 'a -> (Address.t * Address.access_path) list -> 'a Address.multi_dest
 val (-->) : Name.t -> Address.access_path -> Address.access_path
 
 
+(** Type of messages being communicated between state machines. *)
+module type Message =
+sig
+
+  type t
+
+  include Types.Equalable with type t := t
+  include Types.Showable  with type t := t
+  val serialize : t -> string
+  val deserialize : string -> Address.access_path -> t
+
+end
+
 (** Processes are state machines with specified messages as inputs and 
     outputs.  *)
 module type S =
 sig
-  module I : sig 
-    include Types.Equalable 
-    include Types.Showable with type t := t
-    val deserialize : string -> Address.access_path -> t     
-  end
-  module O : sig
-    include Types.Equalable 
-    include Types.Showable with type t := t
-    val serialize : t -> string
-  end
+
+  module I : Message
+  module O : Message
 
   type state
   val show_state : state -> string
 
   val name   : Name.t
   val thread : (state, I.t, O.t Address.multi_dest) t
+
 end
 
 type ('a, 'b) process_module = (module S with type I.t = 'a and type O.t = 'b)
@@ -130,18 +135,18 @@ type ('a, 'b) process_module = (module S with type I.t = 'a and type O.t = 'b)
 val evolve :
   ('a, 'b) process_module ->
   ('a, ('b Address.multi_dest option * ('a, 'b) process_module) Lwt.t)
-    transition Lwt.t
+    transition
 
 val ( >>> ) :
   ('a, 'b, 'c) transition_function ->
   ('a, 'b, 'c) transition_function ->
   ('a, 'b, 'c) transition_function
 
-val with_input : ('i -> ('s, 'i, 'o) outcome_lwt) -> ('i, ('s, 'i, 'o) outcome_lwt) transition Lwt.t
+val with_input : ('i -> ('s, 'i, 'o) outcome Lwt.t) -> ('i, ('s, 'i, 'o) outcome Lwt.t) transition
 
-val without_input : ('s, 'i, 'o) outcome_lwt -> ('i, ('s, 'i, 'o) outcome_lwt) transition Lwt.t
+val without_input : ('s, 'i, 'o) outcome Lwt.t -> ('i, ('s, 'i, 'o) outcome Lwt.t) transition
 
-val stop : 's -> ('s, 'i, 'o) outcome_lwt
+val stop : 's -> ('s, 'i, 'o) outcome Lwt.t
 
-val continue_with : ?output:'o -> 's -> ('s, 'i, 'o) transition_function -> ('s, 'i, 'o) outcome_lwt
+val continue_with : ?output:'o -> 's -> ('s, 'i, 'o) transition_function -> ('s, 'i, 'o) outcome Lwt.t
 

@@ -65,6 +65,8 @@ struct
     type t = product_input
     [@@deriving eq, show]
 
+    let serialize _ = failwith "useless"
+
     let deserialize bytes access_path =
       match access_path with
       | Process.Address.Root ->
@@ -89,6 +91,8 @@ struct
 
     type t = product_output
     [@@deriving eq, show]
+
+    let deserialize _ _ = failwith "useless"
 
     let serialize (msg : t) =
       match msg with
@@ -170,7 +174,7 @@ struct
     | NoMove
 
   let play_as player =
-    let%lwt resumption = Process.evolve player.proc in
+    let resumption = Process.evolve player.proc in
     match resumption, Deque.front player.buff with
     | Input transition, Some (msg, tail) ->
       let player_id = Types.show_public_identity player.id in
