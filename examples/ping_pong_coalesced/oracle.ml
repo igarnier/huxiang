@@ -26,6 +26,9 @@ struct
 
       let deserialize _ _ = ()
 
+      let serialize _ =
+        failwith "useless"
+
     end
 
   module O =
@@ -33,6 +36,9 @@ struct
     
     type t = [`leader of unit]
     [@@deriving eq,show]
+
+      let deserialize _ _ =
+        failwith "useless"
 
     let serialize v =
       Bytes.to_string (Marshal.to_bytes v [])

@@ -30,6 +30,8 @@ struct
       type t = unit
       [@@deriving yojson,eq,show]
 
+      let serialize _ = failwith "useless"
+
       let deserialize _ _ = ()
 
     end
@@ -42,6 +44,8 @@ struct
 
     let serialize v =
       Bytes.to_string (Marshal.to_bytes v [])
+
+    let deserialize _ _ = failwith "useless"
 
   end
 
