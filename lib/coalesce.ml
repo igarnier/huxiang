@@ -312,54 +312,41 @@ struct
     let left_input  = peek_buff state.left in
     let right_input = peek_buff state.right in
     match%lwt play_as state.left with
-    | Move_output(left, output) ->
+    | Move_output(left, output) when Types.equal_public_identity left.id Info.owner ->
       let output_s  = Left.O.show output.Process.Address.msg in
       let player_id = Types.show_public_identity left.id in
-      if Types.equal_public_identity left.id Info.owner then
-        (log_s @@ sprintf "played as %s, output %s" player_id output_s;%lwt
-         let transition = LeftTransition left_input in
-         let state      = { state with left } in
-         (* let msg_before = Process.Address.show_multi_dest Left.O.pp output in *)
-         let output     = reroute_original_message (`output_from_left output.msg) output.dests in
-         (* let msg_after  = Process.Address.show_multi_dest O.pp output in *)
-         (* log_s @@ sprintf "rerouted message from %s to %s" msg_before msg_after;%lwt *)
-         Process.continue_with ~output state (notify_transition proof transition))
-      else
-        (log_s @@ sprintf "played as %s hence no rights to output %s, reverting"
-           player_id output_s;%lwt
-         Process.continue_with state process
-        )
+      (log_s @@ sprintf "played as %s, output %s" player_id output_s;%lwt
+       let transition = LeftTransition left_input in
+       let state      = { state with left } in
+       (* let msg_before = Process.Address.show_multi_dest Left.O.pp output in *)
+       let output     = reroute_original_message (`output_from_left output.msg) output.dests in
+       (* let msg_after  = Process.Address.show_multi_dest O.pp output in *)
+       (* log_s @@ sprintf "rerouted message from %s to %s" msg_before msg_after;%lwt *)
+       Process.continue_with ~output state (notify_transition proof transition))
     | Move_nooutput left ->
       let player_id = Types.show_public_identity left.id in
       log_s @@ sprintf "played as %s, no output" player_id;%lwt
       let transition   = LeftTransition left_input in
       let state        = { state with left } in
       Process.continue_with state (notify_transition proof transition)
-    | NoMove ->
+    | _ ->
       (log "%s: could not play as left" (Types.show_public_identity Info.owner);%lwt
        match%lwt play_as state.right with
-       | Move_output(right, output) ->
+       | Move_output(right, output) when Types.equal_public_identity state.right.id Info.owner ->
          let output_s  = Right.O.show output.Process.Address.msg in
          let player_id = Types.show_public_identity right.id in         
-         if Types.equal_public_identity state.right.id Info.owner then
-           (log_s @@ sprintf "played as %s, output %s" player_id output_s;%lwt
-            let transition = RightTransition right_input in
-            let state      = { state with right } in
-            let output     = reroute_original_message (`output_from_right output.msg) output.dests in
-            Process.continue_with ~output state (notify_transition proof transition))
-         else
-           let%lwt () =
-             log_s @@ sprintf
-               "played as %s hence no rights to output %s, reverting" 
-               player_id output_s
-           in
-           Process.continue_with state process
+         (log_s @@ sprintf "played as %s, output %s" player_id output_s;%lwt
+          let transition = RightTransition right_input in
+          let state      = { state with right } in
+          let output     = reroute_original_message (`output_from_right output.msg) output.dests in
+          Process.continue_with ~output state (notify_transition proof transition))
+
        | Move_nooutput right ->
          log_s "played as right, no output";%lwt
          let transition   = RightTransition right_input in
          let state        = { state with right } in
          Process.continue_with state (notify_transition proof transition)
-       | NoMove ->
+       | _ ->
          log_s "could not play as right: blocked";%lwt
          Process.continue_with state process
       )

@@ -106,7 +106,7 @@ struct
         failwith "pingmsg/deserialize: wrong path"
   end
 
-  type state = { money : int; last_keepalive : float } [@@deriving show]
+  type state = { money : int } [@@deriving show]
 
   let name = Process.Name.atom "service"
 
@@ -123,7 +123,7 @@ struct
 
   and main_loop state =
     Process.with_input (fun (`BulkPayement i) ->
-        let state = { state with money = state.money + i } in
+        let state = { money = state.money + i } in
         service_msg i state;%lwt
         Process.continue_with state write_to_mother
       )
@@ -138,7 +138,7 @@ struct
         
   let thread =
     {
-      Process.move = deposit; state = { money = 0; last_keepalive = Unix.gettimeofday () }
+      Process.move = deposit; state = { money = 0 }
     }
 
 end

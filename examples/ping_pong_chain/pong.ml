@@ -104,6 +104,7 @@ struct
         ~src:X.account
         ~ctx:ctx_address
         ~gas:(Z.of_int 99999)
+        ~value:None
       >>= fun receipt ->
       Lwt.return (ABI.Decode.decode_events ctx.abi receipt)
 
