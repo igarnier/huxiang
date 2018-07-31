@@ -1,29 +1,18 @@
-module type Elt =
-sig
-  type t
-    
-  val hash : t -> Sodium.Hash.hash
 
-  val prev : t -> Sodium.Hash.hash
-
-end
+type 'a node = {
+  elt   : 'a;
+  prev  : Types.hash
+}
 
 
-module Make(E : Elt) =
-struct
+(* Hashtable whose keys are *)
+module Table =
+  Hashtbl.Make(struct
 
-  type t = E.t list
-
-  let cons elt l =
-    match l with
-    | [] -> Some [elt]
-    | hd :: tl ->
-      if Sodium.Hash.equal (E.hash hd) (E.prev elt) then
-        Some (elt :: l)
-      else
-        None
-
-  let empty = []
-
-end
-
+    type t = Types.hash
+               
+    let equal = Types.equal_hash
+                  
+    let hash h =
+      Hashtbl.hash (Types.bytes_of_hash h)
+  end)

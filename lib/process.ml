@@ -1,6 +1,5 @@
 open Types
 
-
 type ('i, 'o) transition =
   | Input of ('i -> 'o)
   | NoInput of 'o
@@ -23,93 +22,26 @@ and ('s, 'i, 'o) outcome =
     next   : ('s, 'i, 'o) t
   }
 
-module Name =
-struct
-
-  type t =
-    | ProcName_Atom of string
-    | ProcName_Prod of t list
-  [@@deriving show, eq]
-
-  let atom x = ProcName_Atom x
-  let prod x = ProcName_Prod x
-
-end
-
-module Address =
-struct
-
-  type t =
-    {
-      owner : Types.public_identity;
-      pname : Name.t
-    }
-  [@@deriving show, eq]
-
-  type access_path =
-    | Root
-    | Access of Name.t * access_path
-  [@@deriving show, eq]
-
-  type 'a multi_dest = {
-    dests : (t * access_path) list;
-    msg   : 'a
-  }
-  [@@deriving show, eq]
-
-  type 'a prov = {
-    path : access_path;
-    msg  : 'a
-  }
-  [@@deriving show, eq]
-
-end
-
-let (@) msg addr =
-  Address.({ msg; dests = [(addr, Root)] })
-
-let (@.) msg dest =
-  Address.({ msg; dests = [dest] })
-
-let (@+) msg dests =
-  Address.({ msg; dests })
-
-let (-->) name ap =
-  Address.Access(name, ap)
-
-module type Message =
-sig
-
-  type t
-
-  include Types.Equalable with type t := t
-  include Types.Showable  with type t := t
-  val serialize : t -> string
-  val deserialize : string -> Address.access_path -> t
-
-end
-
 module type S =
 sig
 
-  module I : Message
-  module O : Message
+  type input
+  type output
 
   type state
   val show_state : state -> string
   val name   : Name.t
-  val thread : (state, I.t, O.t Address.multi_dest) t
+  val thread : (state, input, output) t
 
 end
 
-type ('a, 'b) process_module = (module S with type I.t = 'a and type O.t = 'b)
+type ('a, 'b) process_module = (module S with type input = 'a and type output = 'b)
 
 let with_input (f : 'i -> ('s, 'i, 'o) outcome Lwt.t) =
   Input f
 
 let without_input (x : ('s, 'i, 'o) outcome Lwt.t) =
   NoInput x
-
 
 let evolve
     (type i o) 
@@ -120,36 +52,36 @@ let evolve
   | Input f ->
     Input (fun i ->
         let%lwt { output; next } = f i in
-        let module R : S with type I.t = i and type O.t = o =  
+        let module R : S with type input = i and type output = o =  
         struct
-          module I = M.I
-          module O = M.O
-          type state = M.state
+          type input  = M.input
+          type output = M.output
+          type state  = M.state
           let show_state = M.show_state
           let name   = M.name
           let thread = next
         end
         in
         let res = (module R : S
-                    with type I.t = i 
-                     and type O.t = o)
+                    with type input = i 
+                     and type output = o)
         in
         (Lwt.return (output, res))
       )
   | NoInput result ->
     NoInput
       (let%lwt { output; next } = result in
-       let module R : S with type I.t = i and type O.t = o =  
+       let module R : S with type input = i and type output = o =  
        struct
-         module I = M.I
-         module O = M.O
-         type state = M.state
+         type input  = M.input
+         type output = M.output
+         type state  = M.state
          let show_state = M.show_state
          let name   = M.name
          let thread = next
        end
        in
-       let res = (module R : S with type I.t = i and type O.t = o) in
+       let res = (module R : S with type input = i and type output = o) in
        Lwt.return (output, res))
   | Stop ->
     Stop
@@ -181,3 +113,92 @@ let stop state =
 let continue_with ?output state move =
   Lwt.return { output;
                next   = { move; state } }
+
+(* val sequence : ('s, 'i, 'o) t -> ('t, 'o, 'p) t -> ('s * 't, 'i, 'p) t *)
+
+(* let rec sequence p1 p2 =
+ *   let rec proc =
+ *     {
+ *       state = (p1.state, p2.state);
+ *       move
+ *     }
+ *   and move (st1, st2) =
+ *     match p2.move st2 with
+ *     | Stop -> Stop
+ *     | NoInput result ->
+ *       NoInput
+ *         (let%lwt r = result in
+ *          Lwt.return {
+ *            r with
+ *            next = sequence p1 r.next
+ *          }
+ *         )
+ *     | Input f2 ->
+ *       begin match p1.move st1 with
+ *         | Stop -> Stop
+ *         | NoInput result ->    
+ *           NoInput
+ *             (let%lwt r = result in
+ *              (match r.output with
+ *               | Some o ->
+ *                 (let%lwt r = f2 o in
+ *                  Lwt.return {
+ *                    r with
+ *                    next = sequence p1.next p2.next
+ *                  })
+ *               | None ->
+ *                 failwith "")
+ *             )
+ *         | Input f1 ->
+ *           Input (fun i ->
+ *               failwith ""
+ *             )
+ *       end *)
+
+let rec precompose process g =
+  let rec proc =
+    {
+      process with move
+    }
+  and move state =
+    match process.move state with
+    | Input f ->
+      Input (fun j ->
+          let%lwt r = f (g j) in
+          Lwt.return { r with
+            next = precompose r.next g
+          }
+        )
+    | NoInput result ->
+      NoInput 
+        (let%lwt r = result in
+         Lwt.return {
+           r with next = precompose r.next g
+         })
+    | Stop -> Stop
+  in proc
+
+let rec postcompose process g =
+  let rec proc =
+    {
+      process with move
+    }
+  and move state =
+    match process.move state with
+    | Input f ->
+      Input (fun j ->
+          let%lwt r = f j in
+          Lwt.return { 
+            output = Batteries.Option.map g r.output;
+            next = postcompose r.next g
+          }
+        )
+    | NoInput result ->
+      NoInput 
+        (let%lwt r = result in
+         Lwt.return {
+           output = Batteries.Option.map g r.output;
+           next = postcompose r.next g
+         })
+    | Stop -> Stop
+  in proc

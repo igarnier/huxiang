@@ -1,53 +1,70 @@
 open Batteries
 open Zmq
 
-
 module LwtSocket = Zmq_lwt.Socket
 module Json = Yojson.Safe
 
-module Make(P : Process.S) =
+
+module Make(P : LowLevelProcess.S)(S : Signer.S) =
 struct
 
-  type network_map = Process.Address.t -> string
+  type network_map = Address.t -> string
+
+  type frame = LowLevelProcess.input
+
+  let route_to_bytes (r : Address.access_path) =
+    Marshal.to_bytes r []
+
+  let route_of_bytes bytes =
+    (Marshal.from_bytes bytes 0 : Address.access_path)
+
+  let frame_to_bytes (uid, frame) =
+    let open LowLevelProcess in
+    let signed_bytes = frame.sdata in
+    let route_bytes  = route_to_bytes frame.route in
+    let key_bytes    = frame.pkey in
+    Marshal.to_bytes (uid, signed_bytes, route_bytes, key_bytes) []
+
+  let frame_of_bytes bytes =
+    let open LowLevelProcess in
+    let (uid, sdata, route_bytes, key_bytes) : 
+      int64 * Bytes.t * Bytes.t * Bytes.t =
+      Marshal.from_bytes bytes 0
+    in
+    let route = route_of_bytes route_bytes in
+    let pkey  = Types.make_public_key key_bytes in
+    let frame = { sdata; route; pkey } in
+    (uid, frame)
 
   type message =
-    | OutMsg of {
-        msg : P.O.t;
-        pth : Process.Address.access_path;
-        uid : int64
-      }
-    | InMsg of {
-        msg : P.I.t;
+    | Msg of {
+        msg : frame;
         uid : int64
       }
     | Ack of { uid : int64 }
               
   type routing =
-    (* | Mcast   of [`Req] LwtSocket.t list *)
-    | Dynamic of (Process.Address.t -> [`Req] LwtSocket.t)
+    | Dynamic of (Address.t -> [`Req] LwtSocket.t)
       
   type t =
     {
       ingoing  : [`Rep] LwtSocket.t; (* recv; send *)
       routing  : routing;
-      mqueue   : (P.O.t Process.Address.multi_dest) Lwt_mvar.t;
-      process  : (module Process.S with type I.t = P.I.t and type O.t = P.O.t)
+      mqueue   : LowLevelProcess.output Lwt_mvar.t;
+      process  : (module LowLevelProcess.S)
     }
 
   let get_uid = function
-    | OutMsg { uid }
-    | InMsg { uid }
+    | Msg { uid }
     | Ack { uid } -> uid
     
   let print_msg msg =
     match msg with
-    | OutMsg { msg; pth; uid } ->
-      let msgs = P.O.show msg in
-      let pths = Process.Address.show_access_path pth in
-      Printf.sprintf "msg(%s/%s/%Ld)" msgs pths uid
-    | InMsg { msg; uid } ->
-      let msgs = P.I.show msg in
-      Printf.sprintf "msg(%s/%Ld)" msgs uid
+    | Msg { msg; uid } ->
+      let open LowLevelProcess in
+      let pths = Address.show_access_path msg.route in
+      let pkey = Bytes.to_string (msg.pkey :> Bytes.t) in
+      Printf.sprintf "msg(%s/%s/%Ld)" pkey pths uid
     | Ack { uid } ->
       Printf.sprintf "ack(%Ld)" uid
   
@@ -63,51 +80,51 @@ struct
       let io = IO.input_string s in
       IO.read_i64 io
 
-  let serialize_message (msg : P.O.t) (path : Process.Address.access_path) =
-    let msgbytes = P.O.serialize msg in
-    Bytes.to_string (Marshal.to_bytes (path, msgbytes) [])
-
-  let deserialize_message (bytes : Bytes.t) =
-    let path, msgbytes =
-      (Marshal.from_bytes bytes 0 : Process.Address.access_path * Bytes.t)
-    in
-    try%lwt Lwt.return (P.I.deserialize (Bytes.to_string msgbytes) path)
-    with
-    | exn ->
-      Lwt.fail_with @@ "huxiang/node/deserialize_message: error caught: "^
-                       (Printexc.to_string exn)
+  (* let serialize_message (msg : O.t) (path : Address.access_path) =
+   *   let msgbytes = O.serialize msg in
+   *   Bytes.to_string (Marshal.to_bytes (path, msgbytes) [])
+   * 
+   * let deserialize_message (bytes : Bytes.t) =
+   *   let path, msgbytes =
+   *     (Marshal.from_bytes bytes 0 : Address.access_path * Bytes.t)
+   *   in
+   *   try%lwt Lwt.return (I.deserialize (Bytes.to_string msgbytes) path)
+   *   with
+   *   | exn ->
+   *     Lwt.fail_with @@ "huxiang/node/deserialize_message: error caught: "^
+   *                      (Printexc.to_string exn) *)
     
   let input str =
-    if String.length str < 12 then
+    if String.length str < 4 then
       Lwt.fail_with "huxiang/node/input: input message too short"
     else
       let headr = String.head str 4 in
-      let uid   = int64_of_bytes (String.sub str 4 8) in
-      let tail  = String.tail str 12 in
       match headr with
       | "mesg" ->
-        let%lwt msg = deserialize_message (Bytes.of_string tail) in
-        Lwt.return (InMsg { msg; uid })
+        let tail  = String.tail str 4 in
+        let (uid, msg) = frame_of_bytes (Bytes.of_string tail) in
+        Lwt.return (Msg { msg; uid })
       | "ackn" ->
-        Lwt.return (Ack { uid })
+        let tail  = String.tail str 4 in
+        Lwt.return (Ack { uid = int64_of_bytes tail })
       | _ ->
         Lwt.fail_with "huxiang/node/input: incorrect header"
 
   let output msg =
     match msg with
-    | OutMsg { msg; pth; uid } ->
-      "mesg"^(bytes_of_int64 uid)^(serialize_message msg pth)
+    | Msg { msg; uid } ->
+      let bytes = frame_to_bytes (uid, msg) in
+      let str   = Bytes.to_string bytes in
+      "mesg"^str
     | Ack { uid } ->
       "ackn"^(bytes_of_int64 uid)
-    | _ ->
-      failwith "huxiang/node/output: wrong message"
 
   let read_and_ack provider =
     let%lwt str = LwtSocket.recv provider in
     let%lwt msg = input str in
     Lwt_log.log_f ~level:Debug "reader: read message %s" (print_msg msg);%lwt
     match msg with
-    | InMsg { msg; uid } ->
+    | Msg { msg; uid } ->
       let reply = Ack { uid } in      
       LwtSocket.send provider (output reply);%lwt
       Lwt.return msg
@@ -115,7 +132,7 @@ struct
       Lwt.fail_with "huxiang/node/read_and_ack: wrong message"
 
   let write_and_get_acked out_msg (consumer : [`Req] LwtSocket.t) =
-    let%lwt serialized = 
+    let%lwt serialized =
       try%lwt Lwt.return (output out_msg)
       with exn ->
         (Lwt_log.log_f ~level:Debug "writer: error caught during serialization: %s" (Printexc.to_string exn);%lwt
@@ -137,8 +154,8 @@ struct
         
   let read_from_ingoing ingoing = read_and_ack ingoing
 
-  let write_to_outgoing { Process.Address.dests; msg } uid (Dynamic table) =
-    Lwt_list.iter_p (fun (address, pth) ->
+  let write_to_outgoing { Address.msg; dests } uid (Dynamic table) =
+    Lwt_list.iter_p (fun (address, route) ->
         let%lwt socket = 
           try%lwt Lwt.return (table address)
           with
@@ -146,16 +163,14 @@ struct
             (Lwt_log.log_f ~level:Debug "writer: error network table computation: %s" (Printexc.to_string exn);%lwt
              Lwt.fail exn)
         in
-        write_and_get_acked (OutMsg { msg; pth; uid }) socket
+        let sdata = S.sign msg in
+        let msg   = {
+          LowLevelProcess.sdata;
+          route;
+          pkey = S.public_key
+        } in
+       write_and_get_acked (Msg { uid; msg }) socket
       ) dests
-
-    (* let m = Json { json = P.O.to_yojson msg; uid } in
-     * let outgoing =
-     *   match routing with
-     *   | Mcast outgoing -> outgoing
-     *   | Dynamic table  -> List.map table dests
-     * in
-     * Lwt_list.iter_p (write_and_get_acked m) outgoing *)
         
   let reader_thread { ingoing; mqueue; process } =
     let rec loop process =

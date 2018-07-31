@@ -1,6 +1,6 @@
 type t =
   {
-    owner : Types.public_identity;
+    owner : Types.public_key;
     pname : Name.t
   }
 [@@deriving show, eq]
@@ -15,7 +15,6 @@ type 'a multi_dest = {
   msg   : 'a
 }
 [@@deriving show, eq]
-
 
 let (@) msg addr =
   { msg; dests = [(addr, Root)] }

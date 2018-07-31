@@ -1,15 +1,39 @@
-type json = Yojson.Safe.json
-
-
 (* -------------------------------------------------------------------------- *)
 
-(** Interfaces for common operations. *)
+type public_key = Bytes.t
+
+let make_public_key x = x
+
+let pp_public_key fmt pkey =
+  (* let bytes = Sodium.Sign.Bytes.of_public_key pkey in *)
+  Format.pp_print_string fmt (Bytes.to_string pkey)
+
+let show_public_key pkey =
+  (* let bytes = Sodium.Sign.Bytes.of_public_key pkey in *)
+  Bytes.to_string pkey (* bytes *)
+
+let equal_public_key = Bytes.equal
+  (* Sodium.Sign.equal_public_keys *)
+
+type hash = Bytes.t
+
+let make_hash x = x
+
+let equal_hash = Bytes.equal
+  (* Sodium.Hash.equal *)
+
+let bytes_of_hash =
+  Sodium.Hash.Bytes.of_hash
+
+(* -------------------------------------------------------------------------- *)
 
 module type Hashable =
 sig
   type t
-  val hash : t -> Sodium.Hash.hash
+  val hash : t -> hash
 end
+
+type json = Yojson.Safe.json
 
 module type Jsonable =
 sig
@@ -33,49 +57,18 @@ end
 
 (* -------------------------------------------------------------------------- *)
 
-(** Type of public keys. *)
-
-type public_identity = Bytes.t
-[@@deriving eq, show]
-
-(* -------------------------------------------------------------------------- *)
-
-(** In order to make the coalescent product work, one needs a way to
-    designate a "leader" among all parties taking part in the coalescent
-    product. A proof of leadership accompanies all meta-transitions
-    ("notifications") issued by the leader. Coalesced processes are 
-    parameterised by an abstract proof of leadership.
-
-    A proof of leadership should be specific to a state of the process:
-    it can't be reused.
-*)
 module type Leadership =
 sig
 
-  (** The abstract type of proofs of leadership. *)
   type t
 
-  (** A proof of leadership should be hashable and equalable, with all the usal 
-      robustness assumptions on the hashing functions. We must also be able
-      to serialize it if we want to make the coalescing product iterable. *)
   include Hashable with type t := t
-
   include Equalable with type t := t
-
   include Jsonable with type t := t
-
   include Showable with type t := t
 
-  (** To prevent reuse of proofs of leadership, we make each proof point
-      to the hash of the previous one. *)
-  val prev : t-> Sodium.Hash.hash
-
-  (** The genesis "proof", i.e. the root of the tree of proofs. *)
+  val prev : t-> hash
   val root : t
-
-  (** Validity ("appendability") of a proof depends on the satisfaction of a
-      predicate which depends on some hash (typically, the hash of the state 
-      of some  process). *)
   val check : t -> t -> bool
 
 end
