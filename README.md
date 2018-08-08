@@ -2,7 +2,7 @@
 A library for functorially defined communicating state machines over TCP.
 
 For now, this code should certainly not be used for purposes beyond 
-experimenting. The library provides a functor `Node.Make` parameterized by a
+experimenting. The library provides a functor `Node.Make` parameterized by a
 "process". A process specifies
 1) which messages can be sent and received, and
 2) a transition function from input to outputs.
