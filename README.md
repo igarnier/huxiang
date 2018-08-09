@@ -1,8 +1,12 @@
 # huxiang 互相
 A library for functorially defined communicating state machines over TCP.
 
+* INSTALLATION
+
+1) Install `opam` by following instructions at https://opam.ocaml.org/blog/opam-2-0-0-rc4/
+
 For now, this code should certainly not be used for purposes beyond 
-experimenting. The library provides a functor `Node.Make` parameterized by a
+experimenting. The library provides afunctor `Node.Make` parameterized by a
 "process". A process specifies
 1) which messages can be sent and received, and
 2) a transition function from input to outputs.
