@@ -1,0 +1,10 @@
+The Broker example.
+
+To build: `make`
+
+To run (locally):
+   * To run the maximally distributed & asynchronous code (before coalescence), 
+   run `service`, `broker` and `client before`.
+
+   * To run the code after coalescing the broker and service code,
+   run `sb_serv`, `sb_brok`, `client after` and `oracle`.
