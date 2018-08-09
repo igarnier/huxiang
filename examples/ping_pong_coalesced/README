@@ -1,0 +1,12 @@
+A first example of process coalescence built on the Ping-Pong example.
+
+To build: `make`
+
+To run (locally):
+   * For the normal execution, run the following executables: 
+     `oracle`, `pp_ping`, `pp_pong` simultaneously. They can be started in any order.
+     It is recommended to execute them in distinct terminals so as to have a clearer
+     view of the logs.
+   * For the execution with the adversarial `ping`, replace `pp_ping` by `pp_evil`.
+   The execution of `pp_pong` should eventually block, after detecting this adversarial
+   behaviour.

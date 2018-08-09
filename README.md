@@ -3,7 +3,8 @@ A library and protocol for functorially defined communicating state machines ove
 
 * INSTALLATION
 
-The following instructions allow to install the `huxiang` library.
+The following instructions allow to install the `huxiang` library. They have been tested
+on Ubuntu 18.04.
 
 1) You will need an `OCaml` environment. Install `opam` by following instructions at https://opam.ocaml.org/blog/opam-2-0-0-rc4/
 2) Switch to OCaml 4.06.0: `opam switch create 4.06.0`. If needed, update shell environment: `eval $(opam env)`.

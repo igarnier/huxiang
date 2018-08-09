@@ -1,0 +1,5 @@
+The Ping-Pong example.
+
+To build: `make`
+To run the ping-pong example: run the `ping` and `pong` executables (in any order).
+Replace `ping` by `evilPing` to run with an adversarial Ping.
