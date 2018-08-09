@@ -1,0 +1,12 @@
+The Broker example, together with on-chain monitoring.
+
+To run (locally):
+   * Edit `mother.ml` and replace the accounts by sufficiently funded accounts
+     on your private geth chain.
+   * `make`
+   * To run the code: run 
+     `mother` `sb_serv`, `sb_brok`, `client after` and `oracle`.
+     This should deploy the mother contract on the blockchain.
+     The (coalesced) service and client code will then kickstart the contract 
+     monitoring by depositing credits on the contract and proceed to their
+     off-chain contract, periodically sending keepalives to the chain.
