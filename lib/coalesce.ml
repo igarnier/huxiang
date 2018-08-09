@@ -115,7 +115,7 @@ struct
     buff : 'i Deque.t
   }
 
-  let peek_buff { buff } =
+  let peek_buff { buff; _ } =
     match Deque.front buff with
     | None          -> None
     | Some (elt, _) -> Some elt
@@ -128,7 +128,7 @@ struct
     proofs : Leader.t list;
   }
 
-  let show_state { left; right; proofs } = "coalesce.show_state is opaque"
+  let show_state { left; right; proofs; _ } = "coalesce.show_state is opaque"
 
   let log = Lwt_log.log_f ~level:Info
 
@@ -143,7 +143,7 @@ struct
       Lwt.fail_with @@ 
       "coalesce/validate_leadership: "^
       "empty proof list"
-    | hd :: tl ->
+    | hd :: _ ->
       if Leader.check proof hd then
         (log_s "leadership validated";%lwt
          Lwt.return { state with proofs = proof :: state.proofs })
@@ -225,7 +225,7 @@ struct
           | None ->
             (* target of message not in [face], keep current addressing *)
             target :: acc
-          | Some { Process.Address.pname = previous_target } ->
+          | Some { Process.Address.pname = previous_target; _ } ->
             (* target of message found in [face]: dispatch to new face,
                modifying access path. *)
             let pth   = Process.Address.Access(previous_target, pth) in
@@ -269,7 +269,7 @@ struct
          "coalesce/notification_transition: incorrect behaviour detected! "^
          "No transition possible for "^(Types.show_public_identity state.left.id)^
          " while notified otherwise"
-       | Move_output(left, output) ->
+       | Move_output(left, _) ->
          if Types.equal_public_identity left.id Info.owner then
            Lwt.fail_with @@
            "coalesce/notification_transition: incorrect behaviour detected! "^

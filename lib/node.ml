@@ -1,5 +1,6 @@
 open Batteries
 open Zmq
+open Lwt
 
 
 module LwtSocket = Zmq_lwt.Socket

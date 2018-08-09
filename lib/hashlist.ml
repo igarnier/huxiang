@@ -17,7 +17,7 @@ struct
   let cons elt l =
     match l with
     | [] -> Some [elt]
-    | hd :: tl ->
+    | hd :: _ ->
       if Sodium.Hash.equal (E.hash hd) (E.prev elt) then
         Some (elt :: l)
       else
