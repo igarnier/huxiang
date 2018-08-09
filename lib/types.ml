@@ -55,6 +55,8 @@ sig
   val show : t -> string
 end
 
+module type Ordered = Map.OrderedType
+
 (* -------------------------------------------------------------------------- *)
 
 module type Leadership =
