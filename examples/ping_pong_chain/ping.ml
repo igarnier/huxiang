@@ -168,8 +168,6 @@ struct
 
 end
 
-(* let _ = Rpc.switch_debug () *)
-
 module Pro =
   Protocol(struct 
     let account = Types.address_from_string "0x7beb9484e091bccd84ffa9a1fda0ba59092c1f79"

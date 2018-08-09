@@ -1,0 +1,14 @@
+Making two Ethereum blockchains communicate: the ping-pong example
+
+To build: `make`
+
+To run (locally):
+   * You will need a running geth node as well as accounts holding some Ether.
+     The geth node should have an open 8545 port for RPC.
+     Edit `ping.ml` and `pong.ml` and substitute the `account` variables for the
+     ones local to your private chain. 
+   * build the examples via `make`
+   * Run the `ping` and `pong` executables. You will be asked to input the passwords
+     for the accounts provided at the first step.
+   If the execution proceeds as it should, the `ping.sol` and `pong.sol` Solidity
+   smart contracts will be deployed. The `OCaml` bridge will make them communicate.
