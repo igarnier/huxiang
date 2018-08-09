@@ -19,3 +19,13 @@ The following instructions allow to install the `huxiang` library.
 
 The `examples/' subdirectory contain several examples. Each should provide a README detailing how
 to execute it.
+
+Some of these examples rely on having further dependencies installed. You will need to install
+the Geth Ethereum client (https://github.com/ethereum/go-ethereum/wiki/geth) in order to run a 
+private Ethereum blockchain. We assume proficiency with that client: you should be able to create 
+accounts and mine some Ether locally on those. We provide a `genesis.json` file in the `examples/geth`
+directory for convenience.
+
+Those examples interact with the `geth` client using the `ocaml-geth` library, which you should clone
+from https://github.com/igarnier/ocaml-geth, build and install using the instructions available on
+this repo.
