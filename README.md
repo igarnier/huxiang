@@ -1,5 +1,5 @@
 # huxiang 互相
-A library for functorially defined communicating state machines over TCP.
+A library and protocol for functorially defined communicating state machines over TCP.
 
 * INSTALLATION
 
@@ -17,4 +17,5 @@ The following instructions allow to install the `huxiang` library.
 
 * EXAMPLES
 
-FAQ: why the name? I find the character 互 very cool.
+The `examples/' subdirectory contain several examples. Each should provide a README detailing how
+to execute it.
