@@ -9,6 +9,7 @@ type output = Bytes.t Address.multi_dest
 
 module type S = Process.S with type input = input
                            and type output = output
+
 module type Serializer =
 sig
   type t

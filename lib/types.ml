@@ -69,8 +69,9 @@ sig
   include Jsonable with type t := t
   include Showable with type t := t
 
-  val prev : t-> hash
+  val prev : t -> hash
   val root : t
   val check : t -> t -> bool
+  val leader : t -> public_key
 
 end

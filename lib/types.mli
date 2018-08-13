@@ -84,7 +84,7 @@ sig
 
   (** To prevent reuse of proofs of leadership, we make each proof point
       to the hash of the previous one. *)
-  val prev : t-> hash
+  val prev : t -> hash
 
   (** The genesis "proof", i.e. the root of the tree of proofs. *)
   val root : t
@@ -93,5 +93,8 @@ sig
       predicate which depends on some hash (typically, the hash of the state 
       of some  process). *)
   val check : t -> t -> bool
+
+  (** Each proof of leadership also points to the public key of the leader. *)
+  val leader : t -> public_key
 
 end

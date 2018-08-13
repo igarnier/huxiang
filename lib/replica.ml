@@ -33,7 +33,7 @@ struct
                 | `Input of P.input ]
 
   type output = [ `Notification of L.t
-                | `Output of P.input ]
+                | `Output of P.output ]
 
   module Data =
   struct
