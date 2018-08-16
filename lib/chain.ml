@@ -69,7 +69,6 @@ struct
     nodes   : node Table.t;
     pending : Types.hash Table.t;
     head    : Types.hash;
-    (* chain   : node Table.t; *)
   }
 
   (** When adding a data together with a proof of leadership, the result is
@@ -144,10 +143,9 @@ struct
     let prev_head = Table.find table.head table.nodes in
     let new_head  = { node with prev = Some prev_head; next = None } in
     let nodes     = Table.update node.hash node.hash new_head table.nodes in
-    (* let chain = Table.add (node.hash :> Bytes.t) node table.chain in *)
-    let table = { table with 
-                  nodes;
-                  head = new_head.hash } in
+    let table     = { table with 
+                      nodes;
+                      head = new_head.hash } in
     resolve_pending table
 
   and resolve_pending table =
@@ -160,8 +158,11 @@ struct
     else
       Extended table (* (relink table) *)
 
-  let get_prev_hash table (hash : Types.hash) =
-    let node = Table.find hash table.nodes in
-    L.prev node.proof
+  let get_node table hash =
+    Table.find hash table.nodes
+
+  (* let get_prev_hash table (hash : Types.hash) =
+   *   let node = Table.find hash table.nodes in
+   *   L.prev node.proof *)
 
 end
