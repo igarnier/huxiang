@@ -7,6 +7,9 @@ type input =
 
 type output = Bytes.t Address.multi_dest
 
+val equal_input : input -> input -> bool
+val equal_output : output -> output -> bool
+
 module type S = Process.S with type input = input
                            and type output = output
 

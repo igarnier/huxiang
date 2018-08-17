@@ -53,10 +53,6 @@ struct
         update (k :> Bytes.t) (k' :> Bytes.t) v table
     end
 
-  (** [HSet] handles sets of hashes. *)
-  module HSet =
-    Set.Make(Bytes)
-
   (** [nodes] contains the set of /all/ received data.
       This set can be decomposed as the union of the [pending] and [chain] sets.
       [pending] is a map whose codomain contains all nodes whose proof of leadership 
@@ -87,8 +83,6 @@ struct
   type result =
     | Consistent of t
     | Inconsistent of t * Data.t * Data.t * L.t
-    | Extended of t
-    | Pending of t
 
   (* update prev/next links for nodes that are in the chain. *)
   let relink table =
@@ -122,13 +116,20 @@ struct
       let nodes = Table.update hash hash { node with data } table.nodes in
       Consistent { table with nodes }
 
-  let rec add data proof table =
+  let insert_data data proof table =
     let hash = L.hash proof in
     if Table.mem hash table.nodes then
       add_to_existing_node data hash table
     else
+      failwith "insert_data: given proof of leadership was not found in chain"
+
+  let rec insert_proof proof table =
+    let hash = L.hash proof in
+    if Table.mem hash table.nodes then
+      table
+    else
       let prev_hash = L.prev proof in
-      let node = { data = [data]; proof; hash; prev = None; next = None } in
+      let node = { data = []; proof; hash; prev = None; next = None } in
       if Types.equal_hash prev_hash table.head then
         let nodes = Table.add node.hash node table.nodes in
         let table = { table with nodes } in
@@ -137,7 +138,7 @@ struct
         let nodes   = Table.add hash node table.nodes in
         let pending = Table.add prev_hash node.hash table.pending in
         let table   = { table with nodes; pending } in
-        Pending table
+        table
 
   and extend_chain node table =
     let prev_head = Table.find table.head table.nodes in
@@ -156,7 +157,7 @@ struct
       let new_node = Table.find new_node_hash table.nodes in
       extend_chain new_node table
     else
-      Extended table (* (relink table) *)
+      table (* (relink table) *)
 
   let get_node table hash =
     Table.find hash table.nodes

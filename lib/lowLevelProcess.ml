@@ -7,6 +7,14 @@ type input =
 
 type output = Bytes.t Address.multi_dest
 
+let equal_input i1 i2 =
+  Bytes.equal i1.sdata i2.sdata &&
+  Address.equal_access_path i1.route i2.route &&
+  Types.equal_public_key i1.pkey i2.pkey
+
+let equal_output o1 o2 =
+  Address.equal_multi_dest Bytes.equal o1 o2
+
 module type S = Process.S with type input = input
                            and type output = output
 
