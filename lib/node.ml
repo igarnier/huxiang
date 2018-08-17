@@ -5,12 +5,12 @@ module LwtSocket = Zmq_lwt.Socket
 module Json = Yojson.Safe
 
 
-module Make(P : LowLevelProcess.S)(S : Signer.S) =
+module Make(P : NetProcess.S)(S : Signer.S) =
 struct
 
   type network_map = Address.t -> string
 
-  type frame = LowLevelProcess.input
+  type frame = NetProcess.input
 
   let route_to_bytes (r : Address.access_path) =
     Marshal.to_bytes r []
@@ -19,14 +19,14 @@ struct
     (Marshal.from_bytes bytes 0 : Address.access_path)
 
   let frame_to_bytes (uid, frame) =
-    let open LowLevelProcess in
+    let open NetProcess in
     let signed_bytes = frame.sdata in
     let route_bytes  = route_to_bytes frame.route in
     let key_bytes    = frame.pkey in
     Marshal.to_bytes (uid, signed_bytes, route_bytes, key_bytes) []
 
   let frame_of_bytes bytes =
-    let open LowLevelProcess in
+    let open NetProcess in
     let (uid, sdata, route_bytes, key_bytes) : 
       int64 * Bytes.t * Bytes.t * Bytes.t =
       Marshal.from_bytes bytes 0
@@ -50,8 +50,8 @@ struct
     {
       ingoing  : [`Rep] LwtSocket.t; (* recv; send *)
       routing  : routing;
-      mqueue   : LowLevelProcess.output Lwt_mvar.t;
-      process  : (module LowLevelProcess.S)
+      mqueue   : NetProcess.output Lwt_mvar.t;
+      process  : (module NetProcess.S)
     }
 
   let get_uid = function
@@ -61,7 +61,7 @@ struct
   let print_msg msg =
     match msg with
     | Msg { msg; uid } ->
-      let open LowLevelProcess in
+      let open NetProcess in
       let pths = Address.show_access_path msg.route in
       let pkey = Bytes.to_string (msg.pkey :> Bytes.t) in
       Printf.sprintf "msg(%s/%s/%Ld)" pkey pths uid
@@ -165,7 +165,7 @@ struct
         in
         let sdata = S.sign msg in
         let msg   = {
-          LowLevelProcess.sdata;
+          NetProcess.sdata;
           route;
           pkey = S.public_key
         } in

@@ -1,6 +1,6 @@
 open Types
 
-module Make(P : LowLevelProcess.S)(S : Signer.S) :
+module Make(P : NetProcess.S)(S : Signer.S) :
 sig
 
   type network_map = Address.t -> string

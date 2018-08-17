@@ -1,47 +1,35 @@
 open Types
 
-(*
-   receive external input X -> notify(recv(X)) to all
-   leader -> simulate available transition T -> notify(T,proof) to all
-                                             -> send potential output only to myself
-          -> no transition available -> notify(nothing,proof) to all
-   receive notify(nothing,proof) -> just add proof with data "Nothing"
-   receive notify(T,proof) -> add to chain state
-                              -> if consistent, not in chain and head: 
-                                 simulate T
-                                 notify(T, proof) to all
-                                 send potential output only to myself
-                              -> if consistent, not in chain and not head: pool (send nothing)
-                              -> if consistent and already in chain: do nothing
-                              -> if inconsistent: 
-                                 notify blame
-                                 go to blame state
-   receive notify(blame,counterexample) -> go to "blame" state
-   receive notify(recv(X)) -> add to buffer
-*)
-
 module type Clique =
 sig
   val addresses : Address.t list
 end
 
-module Make(P : LowLevelProcess.S)(L : Leadership)(C : Clique) =
-struct
+type notification_kind =
+  | Transition
+  | NoTransition
+[@@deriving eq]
 
-  type notification_kind =
-    | Transition
-    | NoTransition
-  [@@deriving eq]
-      
-  type notification =
-    {
-      nkind  : notification_kind;
-      inputs : P.input list
-    }
-    
-  let equal_notification n1 n2 =
-    equal_notification_kind n1.nkind n2.nkind &&
-    List.for_all2 LowLevelProcess.equal_input n1.inputs n2.inputs
+type notification =
+  {
+    nkind  : notification_kind;
+    inputs : NetProcess.input list
+  }
+
+let equal_notification n1 n2 =
+  equal_notification_kind n1.nkind n2.nkind &&
+  List.for_all2 NetProcess.equal_input n1.inputs n2.inputs
+
+module Make(P : NetProcess.S)(L : Leadership)(C : Clique) :
+  Process.S with type input =
+                   [ `Leader of L.t
+                   | `Notification of L.t * notification
+                   | `Input of P.input ]
+             and type output =
+                   [ `Notification of L.t * notification
+                   | `Output of Bytes.t ] Address.multi_dest
+=
+struct
 
   (* TODO: bool=performed a transition or not, should ultimately be 
      transition_name option. *)
@@ -62,12 +50,8 @@ struct
     type t = notification
     [@@deriving eq]
 
-    let consistent x y = failwith ""
-      (* match x, y with
-       * | Blocked, _
-       * | _, Blocked -> false
-       * | _ ->
-       *   equal x y *)
+    let consistent = equal
+
   end
 
   module Chain = Chain.Make(Data)(L)
@@ -76,12 +60,14 @@ struct
 
   type state =
     {
-      proc    : (module LowLevelProcess.S);
+      proc    : (module NetProcess.S);
       fbuff   : buffer; (* future buffer *)
       pbuff   : buffer; (* present buffer *)
       chain   : Chain.t;
       current : Types.hash
     }
+
+  let show_state _ = "opaque"
 
   let broadcast (msg : output_data) =
     let open Address in
@@ -105,7 +91,6 @@ struct
 
   let put_message_in_present msg state =
     { state with pbuff = Batteries.Deque.snoc state.pbuff msg }
-
 
   let validate_leadership state proof =
     { state with chain = Chain.insert_proof proof state.chain }
@@ -137,7 +122,6 @@ struct
       )
     | Stop ->
       Lwt.return None
-      
 
   let rec process state =
     Process.with_input begin function
@@ -165,7 +149,7 @@ struct
   and synch node state =
     Process.without_input begin
       match node with
-      | None -> 
+      | None ->
         Process.continue_with state process
       | Some node ->
         let state = { state with current = node.Chain.hash } in
@@ -237,5 +221,6 @@ struct
       )
   end
 
+  let thread = failwith ""
            
 end
