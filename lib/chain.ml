@@ -162,6 +162,20 @@ struct
   let get_node table hash =
     Table.find hash table.nodes
 
+  let create () =
+    let genesis = {
+      data  = [];
+      proof = L.root;
+      hash  = L.hash L.root;
+      prev  = None;
+      next  = None
+    } in
+    {
+      nodes   = Table.singleton (genesis.hash :> Bytes.t) genesis;
+      pending = Table.empty;
+      head    = genesis.hash
+    }
+
   (* let get_prev_hash table (hash : Types.hash) =
    *   let node = Table.find hash table.nodes in
    *   L.prev node.proof *)

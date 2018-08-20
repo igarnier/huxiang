@@ -15,6 +15,8 @@ let show_public_key pkey =
 let equal_public_key = Bytes.equal
   (* Sodium.Sign.equal_public_keys *)
 
+let compare_public_key = Bytes.compare
+
 type hash = Bytes.t
 
 let make_hash x = x

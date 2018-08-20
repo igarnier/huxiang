@@ -14,6 +14,9 @@ val show_public_key : public_key -> string
 (** Testing public keys for equality *)
 val equal_public_key : public_key -> public_key -> bool
 
+(** Total order on public keys, inherited from Bytes.t *)
+val compare_public_key : public_key -> public_key -> int
+
 (** Type of hashs *)
 type hash = private Bytes.t
 

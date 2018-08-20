@@ -221,6 +221,20 @@ struct
       )
   end
 
-  let thread = failwith ""
+  let initial_state =
+    let chain = Chain.create () in
+    {
+      proc  = (module P);
+      fbuff = Batteries.Deque.empty;
+      pbuff = Batteries.Deque.empty;
+      chain;
+      current = chain.Chain.head
+    }
+
+  let thread =
+    {
+      Process.move = process;
+             state = initial_state
+    }
            
 end
