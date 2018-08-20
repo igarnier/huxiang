@@ -104,13 +104,15 @@ struct
   *)
 
   let try_to_transition state =
-    match Process.evolve state.proc with
-    | Process.NoInput code ->
+    let ks = Process.evolve state.proc in
+    (* TODO: here, we need to parameterise the code by a scheduler /!!!!!\ *)  
+    match ks with
+    | (Process.NoInput code) :: _ ->
       let%lwt output, next = code in
       let state  = { state with proc = next } in
       let output = rewrap_output output in
       Lwt.return (Some (state, output))
-    | Process.Input f ->
+    | (Process.Input f) :: _ ->
       (match Batteries.Deque.front state.pbuff with
        | None -> 
          Lwt.return None
@@ -120,7 +122,7 @@ struct
          let output = rewrap_output output in
          Lwt.return (Some (state, output))
       )
-    | Stop ->
+    | Stop :: _ | [] ->
       Lwt.return None
 
   let rec process state =

@@ -184,8 +184,9 @@ struct
         );%lwt
         loop next
       in
+      (* TODO: Here we need to parameterize the node by a scheduler /!!!!\*)
       match Process.evolve process with
-      | Input transition ->
+      | (Input transition) :: _ ->
         Lwt_log.log ~level:Debug "reader: Input transition";%lwt
         (let%lwt msg = read_from_ingoing ingoing in
          Lwt_log.log ~level:Debug "reader: read";%lwt
@@ -197,7 +198,7 @@ struct
          in
          continue out next
         )
-      | NoInput transition ->
+      | (NoInput transition) :: _ ->
         Lwt_log.log ~level:Debug "reader: NoInput transition";%lwt
         let%lwt out, next =
           try%lwt transition with
@@ -206,7 +207,7 @@ struct
             Lwt.fail exn
         in
         continue out next
-      | Stop ->
+      | Stop :: _ | [] ->
         Lwt_log.log ~level:Info "reader: Stop state reached";%lwt
         Lwt.return ()
     in

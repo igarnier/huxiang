@@ -23,7 +23,7 @@ type ('s,'i,'o) t = {
 }
 
 and ('s, 'i, 'o) transition_function =
-  's -> ('i, ('s, 'i, 'o) outcome Lwt.t) transition
+  's -> ('i, ('s, 'i, 'o) outcome Lwt.t) transition list
 
 and ('s, 'i, 'o) outcome =
   {
@@ -58,16 +58,16 @@ type ('a, 'b) process_module =
 val evolve :
   ('a, 'b) process_module ->
   ('a, ('b option * ('a, 'b) process_module) Lwt.t)
-    transition
+    transition list
 
-val ( >>> ) :
-  ('a, 'b, 'c) transition_function ->
-  ('a, 'b, 'c) transition_function ->
-  ('a, 'b, 'c) transition_function
+(* val ( >>> ) :
+ *   ('a, 'b, 'c) transition_function ->
+ *   ('a, 'b, 'c) transition_function ->
+ *   ('a, 'b, 'c) transition_function *)
 
-val with_input : ('i -> ('s, 'i, 'o) outcome Lwt.t) -> ('i, ('s, 'i, 'o) outcome Lwt.t) transition
+val with_input : ('i -> ('s, 'i, 'o) outcome Lwt.t) -> ('i, ('s, 'i, 'o) outcome Lwt.t) transition list
 
-val without_input : ('s, 'i, 'o) outcome Lwt.t -> ('i, ('s, 'i, 'o) outcome Lwt.t) transition
+val without_input : ('s, 'i, 'o) outcome Lwt.t -> ('i, ('s, 'i, 'o) outcome Lwt.t) transition list
 
 val stop : 's -> ('s, 'i, 'o) outcome Lwt.t
 
