@@ -18,6 +18,8 @@ let equal_output o1 o2 =
 module type S = Process.S with type input = input
                            and type output = output
 
+type 's t = ('s, input, output) Process.t
+
 module type Serializer =
 sig
   type t
@@ -27,7 +29,7 @@ end
 module type Deserializer =
 sig
   type t
-  val deserialize : Bytes.t -> Address.access_path -> t
+  val deserialize : Types.public_key -> Bytes.t -> Address.access_path -> t
 end
 
 module Compile
@@ -51,7 +53,7 @@ struct
   let pre input =
     let pkey  = Sodium.Sign.Bytes.to_public_key (input.pkey :> Bytes.t) in
     let bytes = Sodium.Sign.Bytes.sign_open pkey input.sdata in
-    D.deserialize bytes input.route
+    D.deserialize input.pkey bytes input.route
 
   let post output =
     {

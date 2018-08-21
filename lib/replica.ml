@@ -6,43 +6,38 @@ sig
 end
 
 type notification_kind =
-  | Transition
+  | Transition of { t_index : int }
   | NoTransition
 [@@deriving eq]
 
-type notification =
-  {
-    nkind  : notification_kind;
-    inputs : NetProcess.input list
-  }
+type notification = 
+  { nkind  : notification_kind;
+    inputs : NetProcess.input list }
 
 let equal_notification n1 n2 =
   equal_notification_kind n1.nkind n2.nkind &&
   List.for_all2 NetProcess.equal_input n1.inputs n2.inputs
 
-module Make(P : NetProcess.S)(L : Leadership)(C : Clique) :
-  Process.S with type input =
-                   [ `Leader of L.t
-                   | `Notification of L.t * notification
-                   | `Input of P.input ]
-             and type output =
-                   [ `Notification of L.t * notification
-                   | `Output of Bytes.t ] Address.multi_dest
+type ('l, 'i) input =
+  | Leader of { proof : 'l }
+  | Notification of { proof : 'l; notif : notification }
+  | Input of 'i
+
+type 'l output_data =
+  | Notification of { proof : 'l; notif : notification }
+  | Output of Bytes.t
+
+module Make(P : NetProcess.S)(S : Process.Scheduler)(L : Leadership)(C : Clique) :
+  Process.S with type input = (L.t, P.input) input
+             and type output = L.t output_data Address.multi_dest
 =
 struct
 
   (* TODO: bool=performed a transition or not, should ultimately be 
      transition_name option. *)
-  type input = 
-    [ `Leader of L.t
-    | `Notification of L.t * notification
-    | `Input of P.input ]
+  type nonrec input = (L.t, P.input) input
 
-  type output_data =
-    [ `Notification of L.t * notification
-    | `Output of Bytes.t ]
-
-  type output = output_data Address.multi_dest
+  type output = L.t output_data Address.multi_dest
 
   module Data =
   struct
@@ -60,7 +55,8 @@ struct
 
   type state =
     {
-      proc    : (module NetProcess.S);
+      (* proc    : (module NetProcess.S); *)
+      proc    : P.state NetProcess.t;
       fbuff   : buffer; (* future buffer *)
       pbuff   : buffer; (* present buffer *)
       chain   : Chain.t;
@@ -69,7 +65,7 @@ struct
 
   let show_state _ = "opaque"
 
-  let broadcast (msg : output_data) =
+  let broadcast (msg : L.t output_data) =
     let open Address in
     {
       dests = List.map (fun addr -> (addr, Root)) C.addresses;
@@ -81,7 +77,7 @@ struct
     | None -> None
     | Some outp ->
       Some { outp 
-             with msg = `Output outp.msg
+             with msg = Output outp.msg
            }
 
   let name = Name.inter P.name
@@ -103,47 +99,92 @@ struct
      else if (previous proof) not to be found: add to waiting pool
   *)
 
-  let try_to_transition state =
-    let ks = Process.evolve state.proc in
-    (* TODO: here, we need to parameterise the code by a scheduler /!!!!!\ *)  
-    match ks with
-    | (Process.NoInput code) :: _ ->
-      let%lwt output, next = code in
+  let play_transition state transition =
+    match transition with
+    | Process.NoInput code ->
+      let%lwt { Process.output; next } = code in
       let state  = { state with proc = next } in
       let output = rewrap_output output in
       Lwt.return (Some (state, output))
-    | (Process.Input f) :: _ ->
+    | Process.Input f ->
       (match Batteries.Deque.front state.pbuff with
        | None -> 
          Lwt.return None
        | Some (inp, pbuff) ->
-         let%lwt output, next = f inp in
+         let%lwt { output; next } = f inp in
          let state  = { state with pbuff; proc = next } in
          let output = rewrap_output output in
          Lwt.return (Some (state, output))
       )
-    | Stop :: _ | [] ->
+
+  let do_transition state index =
+    let ks  = Process.evolve state.proc in
+    let len = List.length ks in
+    if index < 0 || index >= len then
       Lwt.return None
+    else
+      let transition = List.nth ks index in
+      match%lwt play_transition state transition with
+      | None -> 
+        Lwt.return None
+      | Some (state, output) ->
+        Lwt.return (Some (state, output))
+
+  let try_to_transition state =
+    let ks = Process.evolve state.proc in
+    (* 1. extract the playable transitions *)
+    (* is input buffer empty? *)
+    let buffer_empty = Batteries.Deque.is_empty state.pbuff in
+    (* a transition is playable if it is NoInput or 
+       (Input & not buffer_empty). *)
+    let _, playable =
+      List.fold_left (fun (i, acc) x ->
+          match x with
+          | Process.NoInput _ -> (i + 1, (i, x) :: acc)
+          | Process.Input _   ->
+            if buffer_empty then
+              (i + 1, acc)
+            else
+              (i + 1, (i,x) :: acc)
+        ) (0, []) ks
+    in
+    (* 2. apply scheduler to pick a transition *)
+    match S.scheduler (List.map snd playable) with
+    | None   -> Lwt.return None
+    | Some i ->
+      (let index, transition = List.nth playable i in
+       match%lwt play_transition state transition with
+       | None -> 
+         Lwt.return None
+       | Some (state, output) ->
+         Lwt.return (Some (index, state, output))
+      )
+
+  let blame proof msg =
+    let leader_pkey = (L.leader proof :> Bytes.t) in
+    let guilty      = Bytes.to_string leader_pkey in
+    Lwt.fail_with @@ msg^" Originator: "^guilty
 
   let rec process state =
     Process.with_input begin function
-      | `Leader proof ->        
+      | Leader { proof } ->        
         let state = validate_leadership state proof in
         let node  = Chain.get_node state.chain state.current in
         Process.continue_with state (synch node.next)
-      | `Notification(proof, notif) ->
+      | Notification { proof; notif } ->
         let state = validate_leadership state proof in
-        let chain =
-          match Chain.add_to_existing_node notif (L.hash proof) state.chain with
-          | Chain.Consistent chain -> chain
+        let hash  = L.hash proof in
+        let res   = Chain.add_to_existing_node notif hash state.chain in
+        let%lwt chain =
+          match res with
+          | Chain.Consistent chain -> Lwt.return chain
           | Chain.Inconsistent(chain, d1, d2, proof) ->
-            let guilty = Bytes.to_string (L.leader proof :> Bytes.t) in
-            failwith @@ "Inconsistency detected. Originator: "^guilty
+            blame proof "Inconsistency detected."
         in
         let state = { state with chain } in
         let node  = Chain.get_node state.chain state.current in
         Process.continue_with state (synch node.next)
-      | `Input i ->
+      | Input i ->
         let state = put_message_in_future i state in
         Process.continue_with state process
     end
@@ -157,76 +198,87 @@ struct
         let state = { state with current = node.Chain.hash } in
         (match node.data with
          | { nkind = NoTransition; inputs } :: _ ->
-           let state = 
-             { state with pbuff = Batteries.Deque.append_list state.pbuff inputs }
-           in
+           let pbuff = Batteries.Deque.append_list state.pbuff inputs in
+           let state = { state with pbuff } in
            Process.continue_with state (synch node.next)
-         | { nkind = Transition; inputs } :: _ ->
-           (match%lwt try_to_transition state with
+         | { nkind = Transition { t_index }; inputs } :: _ ->
+           (match%lwt do_transition state t_index with
             | None ->
               (* Inconsistency! *)
-              let guilty = Bytes.to_string (L.leader node.proof :> Bytes.t) in
-              Lwt.fail_with @@ 
-              "Inconsistency detected. Could not perform transition. "^
-              "Originator: "^guilty
-            | Some (state, output) ->
-              let state = 
-                { state with pbuff = Batteries.Deque.append_list state.pbuff inputs }
+              let message = 
+                "Inconsistency detected. Could not perform transition." 
               in
+              blame node.proof message
+            | Some (state, output) ->
+              let pbuff = Batteries.Deque.append_list state.pbuff inputs in
+              let state = { state with pbuff } in
               Process.continue_with ?output state (synch node.next))
          | [] ->
            (* The only way the data is empty is if we're leader. *)
            (match%lwt try_to_transition state with
             | None ->
-              let notif = { nkind  = NoTransition;
-                            inputs = Batteries.Deque.to_list state.fbuff
-                          }
-              in
-              let chain =
-                match Chain.add_to_existing_node notif (L.hash node.proof) state.chain with
-                | Chain.Consistent chain -> chain
-                | Chain.Inconsistent _ ->
-                  failwith "Replica: impossible case. Bug found, please report."
-              in
-              let state  = { state with
-                             chain;
-                             pbuff = Batteries.Deque.append state.pbuff state.fbuff;
-                             fbuff = Batteries.Deque.empty
-                           }
-              in
-              let output = broadcast (`Notification(node.proof, notif)) in
-              Process.continue_with ~output state (synch node.next)
-            | Some (state, output) ->
-              Process.continue_with ?output state
-                (fun state -> Process.without_input begin
-                     let notif = { nkind  = Transition;
-                                   inputs = Batteries.Deque.to_list state.fbuff
-                                 }
-                     in
-                     let chain =
-                       match Chain.add_to_existing_node notif (L.hash node.proof) state.chain with
-                       | Chain.Consistent chain -> chain
-                       | Chain.Inconsistent _ ->
-                         failwith "Replica: impossible case. Bug found, please report."
-                     in
-                     let state  = { state with
-                                    chain;
-                                    pbuff = Batteries.Deque.append state.pbuff state.fbuff;
-                                    fbuff = Batteries.Deque.empty
-                                  }
-                     in
-                     let output = broadcast (`Notification(node.proof, notif)) in
-                   Process.continue_with ~output state (synch node.next)
-                end
-              )
-         )
+              notify_no_transition state node
+            | Some result ->
+              notify_transition result node
+           )
+        )
+    end
+
+  and notify_no_transition state node =
+    let notif  = { nkind  = NoTransition;
+                   inputs = Batteries.Deque.to_list state.fbuff } in
+    let hash   = L.hash node.Chain.proof in
+    let result =
+      Chain.add_to_existing_node notif hash state.chain
+    in
+    let%lwt chain =
+      match result with
+      | Chain.Consistent chain -> Lwt.return chain
+      | Chain.Inconsistent _ ->
+        Lwt.fail_with @@
+        "huxiang/replica: impossible case. Bug found, please report."
+    in
+    let state  = 
+      let pbuff = Batteries.Deque.append state.pbuff state.fbuff in
+      let fbuff = Batteries.Deque.empty in
+      { state with chain; pbuff; fbuff }
+    in
+    let output = broadcast (Notification { proof = node.proof; notif }) in
+    Process.continue_with ~output state (synch node.next)
+
+  and notify_transition (t_index, state, output) node =
+    Process.continue_with ?output state
+      (fun state -> Process.without_input begin
+           let notif  = { nkind  = Transition { t_index };
+                          inputs = Batteries.Deque.to_list state.fbuff
+                        }
+           in
+           let hash   = L.hash node.proof in
+           let result =
+             Chain.add_to_existing_node notif hash state.chain
+           in
+           let%lwt chain =
+             match result with
+             | Chain.Consistent chain -> Lwt.return chain
+             | Chain.Inconsistent _ ->
+               Lwt.fail_with @@
+               "huxiang/replica: impossible case. "^
+               "Bug found, please report."
+           in
+           let state  = 
+             let pbuff = Batteries.Deque.append state.pbuff state.fbuff in
+             let fbuff = Batteries.Deque.empty in
+             { state with chain; pbuff; fbuff }
+           in
+           let output = broadcast (Notification { proof = node.proof; notif }) in
+           Process.continue_with ~output state (synch node.next)
+         end
       )
-  end
 
   let initial_state =
     let chain = Chain.create () in
     {
-      proc  = (module P);
+      proc  = P.thread;
       fbuff = Batteries.Deque.empty;
       pbuff = Batteries.Deque.empty;
       chain;
@@ -240,3 +292,21 @@ struct
     }
            
 end
+
+module Serializer(L : Leadership) :
+  NetProcess.Serializer 
+  with type t = L.t output_data
+=
+struct
+  
+  type t = L.t output_data
+
+  let serialize = function
+    | Notification { proof; notif } ->
+      failwith ""
+    | _ ->
+      failwith ""
+    
+
+end
+  

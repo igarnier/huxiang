@@ -51,7 +51,7 @@ struct
       ingoing  : [`Rep] LwtSocket.t; (* recv; send *)
       routing  : routing;
       mqueue   : NetProcess.output Lwt_mvar.t;
-      process  : (module NetProcess.S)
+      process  : P.state NetProcess.t
     }
 
   let get_uid = function
@@ -190,28 +190,28 @@ struct
         Lwt_log.log ~level:Debug "reader: Input transition";%lwt
         (let%lwt msg = read_from_ingoing ingoing in
          Lwt_log.log ~level:Debug "reader: read";%lwt
-         let%lwt out, next =
+         let%lwt { Process.output; next } =
            try%lwt transition msg with
            | exn ->
              Lwt_log.log_f ~level:Debug "reader: error caught in evolve: %s" (Printexc.to_string exn);%lwt
              Lwt.fail exn
          in
-         continue out next
+         continue output next
         )
       | (NoInput transition) :: _ ->
         Lwt_log.log ~level:Debug "reader: NoInput transition";%lwt
-        let%lwt out, next =
+        let%lwt { Process.output; next } =
           try%lwt transition with
           | exn ->
             Lwt_log.log_f ~level:Debug "reader: error caught in evolve: %s" (Printexc.to_string exn);%lwt
             Lwt.fail exn
         in
-        continue out next
-      | Stop :: _ | [] ->
+        continue output next
+      | [] ->
         Lwt_log.log ~level:Info "reader: Stop state reached";%lwt
         Lwt.return ()
     in
-    loop (module P)
+    loop process
 
   let writer_thread { routing; mqueue } =
     let rec loop uid =
@@ -282,7 +282,7 @@ struct
             ingoing;
             routing = Dynamic (fun x -> get_socket ctx table (network_map x));
             mqueue  = Lwt_mvar.create_empty ();
-            process = (module P)
+            process = P.thread
           }
         in
         let program =
