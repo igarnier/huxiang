@@ -12,12 +12,20 @@ struct
   type output = NetProcess.output
 
   type buffer = NetProcess.input Batteries.Deque.t
+      
+  module Map =
+    Batteries.Map.Make(struct
+      type t = Types.public_key
+                 
+      let compare = Types.compare_public_key
+    end)
 
-  type state = 
-    {
-      procs   : (module NetProcess.S) array;
-      buffers : buffer array
-    }
+  type proc_state = {
+    proc   : (module NetProcess.S);
+    buffer : buffer
+  }
+
+  type state = proc_state Map.t
 
   let owners  = List.map (fun { Address.owner; _ } -> owner) P.addresses
 
@@ -27,23 +35,22 @@ struct
     assert (List.length owners = List.length owners');
     assert (List.exists (Types.equal_public_key P.owner) owners)
 
-  let process_of_owner owner =
-    let (_, result) =
-      List.fold_left2 (fun (index, res) proc proc_owner ->
-          if Types.equal_public_key proc_owner owner then
-            (index + 1, Some index)
-          else
-            (index + 1, res)
-        ) (0, None) P.processes owners
-    in
-    result
+  let get state pkey =
+    Map.find pkey state
 
-  let index_of_my_process = 
-    match process_of_owner P.owner with
-    | None ->
-      failwith @@
-      "huxiang/product/index_of_my_process: owner is not in process list"
-    | Some i -> i
+  let append_to_buffer state pkey data =
+    Map.modify pkey (fun procst ->
+        { procst with
+          buffer = Batteries.Deque.snoc procst.buffer data
+        }
+      ) state
+
+  let update state pkey procst =
+    Map.update pkey pkey procst state
+
+  let set_proc state pkey proc =
+    let procst = get state pkey in
+    Map.update pkey pkey { procst with proc } state
 
   let show_state _ = "opaque"
 
@@ -51,28 +58,95 @@ struct
     List.exists (fun owner ->
         Types.equal_public_key owner pkey
       ) owners
+      
+  let reroute state (output : Bytes.t Address.multi_dest option) =
+    match output with
+    | None -> state, None
+    | Some { Address.msg; dests } ->
+      let inside, outside =
+        List.partition (fun ({ Address.owner; _}, _) ->
+            Map.mem owner state
+          ) dests
+      in
+      (* dispatch message internally *)
+      let state =
+        List.fold_left (fun state (addr, _) ->
+            (* TODO: NetProcess.inputs are /signed/ but we have nothing to
+               sign anything with here. 
+               Option: relax input of NetProcess so that data can be explicitely
+               /not/ signed.
+            *)
+            let signed = failwith "" in
+            append_to_buffer state addr.Address.owner signed
+          ) state inside
+      in
+      match outside with
+      | [] ->
+        state, None
+      | dests ->
+        state, Some { Address.msg; dests }
+
 
   let rec process state =
-    Process.with_input (fun { NetProcess.sdata; route; pkey } ->
-        if key_is_in_clique pkey then
-          (* This input message comes from the inside of the Clique. 
-             This should not happen. *)
-          Lwt.fail_with @@
-          "huxiang/product/process: inbound message from clique, error"
-        else
-          (* This input message comes from outside of the Clique.
-             It must be destinated to
-          *)
-          failwith "TODO"
-    )
+    let add_input =
+      Process.with_input (fun external_input ->
+          let state = append_to_buffer state P.owner external_input in
+          Process.continue_with state process
+        )
+    and playable_transition =
+      Map.fold (fun pkey { buffer; proc } acc ->
+          let buffer_empty = Batteries.Deque.is_empty buffer in
+          let ks = Process.evolve_module proc in
+          List.fold_left (fun acc transition ->
+              match transition with
+              | Process.NoInput code -> 
+                (play_noinput pkey state code) :: acc
+              | Process.Input f   ->
+                if buffer_empty then
+                  acc
+                else
+                  (play_input pkey buffer state f) :: acc
+            ) acc ks
+        ) state []
+    in      
+    add_input @ playable_transition
+
+  and play_noinput pkey state code =
+    Process.without_input_plain begin
+      let%lwt output, next = code in
+      let state, output = reroute state output in
+      let state  = set_proc state pkey next in
+      Process.continue_with ?output state process
+    end
+
+  and play_input pkey buffer state f =
+    Process.without_input_plain begin
+      match Batteries.Deque.front buffer with
+      | None ->
+        Lwt.fail_with "huxiang/product/play_input: empty buffer, bug found"
+      | Some(hd, tl) ->
+        let%lwt output, next = f hd in
+        let state, output = reroute state output in
+        let procst = { buffer = tl; proc = next } in
+        let state  = update state pkey procst in
+        Process.continue_with ?output state process
+    end
 
   let name = failwith ""
 
-  let thread = {
-    Process.move  = process;
-    Process.state = { procs   = Array.of_list P.processes; 
-                      buffers = Array.make (List.length P.processes) Batteries.Deque.empty
-                    }
-  }
+  let thread = 
+    let state =
+      List.fold_left2 (fun state owner proc ->
+          let procst = {
+            proc;
+            buffer = Batteries.Deque.empty
+          } in
+          Map.add owner procst state
+        ) Map.empty owners P.processes
+    in
+    {
+      Process.move  = process;
+      Process.state
+    }
   
 end

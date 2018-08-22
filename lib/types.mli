@@ -76,14 +76,16 @@ sig
 
   (** A proof of leadership should be hashable and equalable, with all the usal 
       robustness assumptions on the hashing functions. We must also be able
-      to serialize it if we want to make the coalescing product iterable. *)
+      to serialize it. *)
   include Hashable with type t := t
 
   include Equalable with type t := t
 
-  include Jsonable with type t := t
+  (* include Jsonable with type t := t *)
 
   include Showable with type t := t
+
+  include Bin_prot.Binable.S with type t := t
 
   (** To prevent reuse of proofs of leadership, we make each proof point
       to the hash of the previous one. *)

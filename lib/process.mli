@@ -37,13 +37,15 @@ type ('s, 'i, 'o) scheduler =
 
 (** We provide a few generic schedulers for convenience. *)
 
-(** [first_pick_scheduler] picks the first transition available. *)
+(** [first_pick_scheduler] picks the first transition available. Beware, this
+    scheduler is /not/ fair. *)
 val first_pick_scheduler : ('s, 'i, 'o) scheduler
 (** [uniform_random_scheduler] picks a transition uniformly at random. *)
 val uniform_random_scheduler : ('s, 'i, 'o) scheduler
 (** [eager_random_scheduler] picks a transition uniformly at random among
     the NoInput set. If no such transition is available, it picks a transition
-    uniformly at random in the Input set. *)
+    uniformly at random in the Input set. Beware, this scheduler is /not/
+    fair. *)
 val eager_random_scheduler : ('s, 'i, 'o) scheduler
 
 module type Scheduler =
@@ -68,8 +70,6 @@ end
 
 (* Since the current state of the process is part of the [thread] value,
    a transition from the process corresponds to updating the whole module. *)
-(* type ('a, 'b) process_module = 
- *   (module S with type input = 'a and type output = 'b) *)
 
 (** [evolve p q] executes [p] until [Stop], then [q]. *)
 (* val evolve :
@@ -77,15 +77,31 @@ end
  *   ('a, ('b option * ('a, 'b) process_module) Lwt.t)
  *     transition list *)
 
+(** A process evolves by applying its state to its transition function, yielding
+    a list of possible transitions. [evolve] performs this application. *)
 val evolve :
   ('s, 'i, 'o) t -> ('i, ('s, 'i, 'o) outcome Lwt.t) transition list
 
+(** In some cases, it is useful to keep the internal state of the process
+    hidden, in which case we have to use the following [evolve_module] function. *)
+
+type ('a, 'b) process_module = 
+  (module S with type input = 'a and type output = 'b)
+
+val evolve_module :
+  ('a, 'b) process_module ->
+  ('a, ('b option * ('a, 'b) process_module) Lwt.t)
+    transition list
   
 
 (* val ( >>> ) :
  *   ('a, 'b, 'c) transition_function ->
  *   ('a, 'b, 'c) transition_function ->
  *   ('a, 'b, 'c) transition_function *)
+
+val with_input_plain : ('i -> ('s, 'i, 'o) outcome Lwt.t) -> ('i, ('s, 'i, 'o) outcome Lwt.t) transition
+
+val without_input_plain : ('s, 'i, 'o) outcome Lwt.t -> ('i, ('s, 'i, 'o) outcome Lwt.t) transition
 
 val with_input : ('i -> ('s, 'i, 'o) outcome Lwt.t) -> ('i, ('s, 'i, 'o) outcome Lwt.t) transition list
 

@@ -68,8 +68,9 @@ sig
 
   include Hashable with type t := t
   include Equalable with type t := t
-  include Jsonable with type t := t
+  (* include Jsonable with type t := t *)
   include Showable with type t := t
+  include Bin_prot.Binable.S with type t := t
 
   val prev : t -> hash
   val root : t

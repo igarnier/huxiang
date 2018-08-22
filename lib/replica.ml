@@ -1,4 +1,5 @@
 open Types
+open Bin_prot.Std
 
 module type Clique =
 sig
@@ -8,7 +9,7 @@ end
 type notification_kind =
   | Transition of { t_index : int }
   | NoTransition
-[@@deriving eq]
+[@@deriving eq, bin_io]
 
 type notification = 
   { nkind  : notification_kind;
@@ -306,7 +307,6 @@ struct
       failwith ""
     | _ ->
       failwith ""
-    
 
 end
   

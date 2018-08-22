@@ -65,7 +65,11 @@ sig
 
 end
 
-(* type ('a, 'b) process_module = (module S with type input = 'a and type output = 'b) *)
+let with_input_plain (f : 'i -> ('s, 'i, 'o) outcome Lwt.t) =
+  Input f
+
+let without_input_plain (x : ('s, 'i, 'o) outcome Lwt.t) =
+  NoInput x
 
 let with_input (f : 'i -> ('s, 'i, 'o) outcome Lwt.t) =
   [Input f]
@@ -76,48 +80,51 @@ let without_input (x : ('s, 'i, 'o) outcome Lwt.t) =
 let evolve { move; state } =
   move state
 
-(* let evolve
- *     (type i o) 
- *     (m : (i, o) process_module) =
- *   let module M = (val m) in
- *   let results  = M.thread.move M.thread.state in
- *   ListLabels.map results ~f:(fun result ->
- *       match result with
- *       | Input f ->
- *         Input (fun i ->
- *             let%lwt { output; next } = f i in
- *             let module R : S with type input = i and type output = o =  
- *             struct
- *               type input  = M.input
- *               type output = M.output
- *               type state  = M.state
- *               let show_state = M.show_state
- *               let name   = M.name
- *               let thread = next
- *             end
- *             in
- *             let res = (module R : S
- *                         with type input = i 
- *                          and type output = o)
- *             in
- *             (Lwt.return (output, res))
- *           )
- *       | NoInput result ->
- *         NoInput
- *           (let%lwt { output; next } = result in
- *            let module R : S with type input = i and type output = o =  
- *            struct
- *              type input  = M.input
- *              type output = M.output
- *              type state  = M.state
- *              let show_state = M.show_state
- *              let name   = M.name
- *              let thread = next
- *            end
- *            in
- *            let res = (module R : S with type input = i and type output = o) in
- *            Lwt.return (output, res))
- *     ) *)
+type ('a, 'b) process_module = 
+  (module S with type input = 'a and type output = 'b)
+
+let evolve_module
+    (type i o) 
+    (m : (i, o) process_module) =
+  let module M = (val m) in
+  let results  = M.thread.move M.thread.state in
+  ListLabels.map results ~f:(fun result ->
+      match result with
+      | Input f ->
+        Input (fun i ->
+            let%lwt { output; next } = f i in
+            let module R : S with type input = i and type output = o =  
+            struct
+              type input  = M.input
+              type output = M.output
+              type state  = M.state
+              let show_state = M.show_state
+              let name   = M.name
+              let thread = next
+            end
+            in
+            let res = (module R : S
+                        with type input = i 
+                         and type output = o)
+            in
+            (Lwt.return (output, res))
+          )
+      | NoInput result ->
+        NoInput
+          (let%lwt { output; next } = result in
+           let module R : S with type input = i and type output = o =  
+           struct
+             type input  = M.input
+             type output = M.output
+             type state  = M.state
+             let show_state = M.show_state
+             let name   = M.name
+             let thread = next
+           end
+           in
+           let res = (module R : S with type input = i and type output = o) in
+           Lwt.return (output, res))
+    )
 
 (* let rec (>>>) p q =
  *   fun state ->
