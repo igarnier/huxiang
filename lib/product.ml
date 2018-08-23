@@ -130,7 +130,13 @@ struct
         Process.continue_with ?output state process
     end
 
-  let name = failwith ""
+  let name =
+    let names = List.map (fun m ->
+        let module M = (val m : NetProcess.S) in
+        M.name
+      ) P.processes
+    in
+    Name.prod names
 
   let thread = 
     let state =

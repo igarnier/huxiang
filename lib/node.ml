@@ -230,13 +230,6 @@ struct
       lwt_debug fname "written";%lwt
       loop Int64.(uid + one)
     in
-    (* match P.initial_message with
-     * | None ->
-     *   loop 0L
-     * | Some msg ->
-     *   (Lwt_log.log ~level:Debug "writing on outgoing port";%lwt
-     *    write_to_outgoing msg 0L routing;%lwt
-     *    Lwt_log.log ~level:Debug "initial message sent";%lwt *)
     loop 0L
 
   let with_context f =
