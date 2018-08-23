@@ -71,13 +71,12 @@ struct
       (* dispatch message internally *)
       let state =
         List.fold_left (fun state (addr, _) ->
-            (* TODO: NetProcess.inputs are /signed/ but we have nothing to
-               sign anything with here. 
-               Option: relax input of NetProcess so that data can be explicitely
-               /not/ signed.
-            *)
-            let signed = failwith "" in
-            append_to_buffer state addr.Address.owner signed
+            let data =
+              NetProcess.({
+                  route = Address.Root;
+                  data  = Raw { data = msg }
+                }) in
+            append_to_buffer state addr.Address.owner data
           ) state inside
       in
       match outside with
@@ -89,7 +88,7 @@ struct
 
   let rec process state =
     let add_input =
-      Process.with_input (fun external_input ->
+      Process.with_input_plain (fun external_input ->
           let state = append_to_buffer state P.owner external_input in
           Process.continue_with state process
         )
@@ -109,7 +108,7 @@ struct
             ) acc ks
         ) state []
     in      
-    add_input @ playable_transition
+    add_input :: playable_transition
 
   and play_noinput pkey state code =
     Process.without_input_plain begin
