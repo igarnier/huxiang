@@ -36,6 +36,9 @@ sig
   include (module type of Bytes with type t := t)
   include Showable with type t := t
   include Bin_prot.Binable.S with type t := t
+
+  val to_buf : t -> Bin_prot.Common.buf
+  val from_buf : Bin_prot.Common.buf -> t
 end
 
 (* -------------------------------------------------------------------------- *)

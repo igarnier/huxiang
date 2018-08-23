@@ -43,6 +43,17 @@ struct
   let bin_write_t  = Std.bin_write_bytes
   let bin_size_t   = Std.bin_size_bytes
   let __bin_read_t__ = Std.__bin_read_bytes__
+
+  let to_buf bytes =
+    let buf = Common.create_buf (length bytes) in
+    Common.blit_bytes_buf bytes buf ~len:(length bytes);
+    buf
+
+  let from_buf buf =
+    let bytes = Bytes.create (Common.buf_len buf) in
+    Common.blit_buf_bytes buf bytes ~len:(Common.buf_len buf);
+    bytes
+
 end
 
 

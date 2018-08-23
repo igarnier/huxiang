@@ -25,11 +25,11 @@ let equal_data d1 d2 =
   | _ ->
     false
 
-let equal_input i1 i2 =
-  equal_data i1.Input.data i2.Input.data
-
-let equal_output o1 o2 =
-  Address.equal_multi_dest Bytes.equal o1 o2
+(* let equal_input i1 i2 =
+ *   equal_data i1.Input.data i2.Input.data
+ * 
+ * let equal_output o1 o2 =
+ *   Address.equal_multi_dest Bytes.equal o1 o2 *)
 
 module type S = Process.S with type input = input
                            and type output = output

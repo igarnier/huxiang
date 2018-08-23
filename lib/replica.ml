@@ -20,12 +20,14 @@ type ('l, 'i) input =
   | Leader of { proof : 'l }
   | Notification of { proof : 'l; notif : notification }
   | Input of 'i
+[@@deriving bin_io]
 
 type 'l output_data =
   | Notification of { proof : 'l; notif : notification }
-  | Output of Bytes.t
+  | Output of Types.HuxiangBytes.t
+[@@deriving bin_io]
 
-module Make(P : NetProcess.S)(S : Process.Scheduler)(L : Leadership)(C : Clique) :
+module Replica(P : NetProcess.S)(S : Process.Scheduler)(L : Leadership)(C : Clique) :
   Process.S with type input = (L.t, P.input) input
              and type output = L.t output_data Address.multi_dest
 =
@@ -293,14 +295,52 @@ module Serializer(L : Leadership) :
   with type t = L.t output_data
 =
 struct
+
+  open Bin_prot
   
   type t = L.t output_data
+  [@@deriving bin_io]
 
-  let serialize = function
-    | Notification { proof; notif } ->
-      failwith ""
-    | _ ->
-      failwith ""
+  let serialize x =
+    let buff = Utils.bin_dump bin_writer_t x in
+    let bytes = Bytes.create (Common.buf_len buff) in
+    Common.blit_buf_bytes buff bytes ~len:(Common.buf_len buff);
+    bytes
+    
+end
 
+module Deserializer(L : Leadership)(C : Clique) :
+  NetProcess.Deserializer 
+  with type t = (L.t, NetProcess.Input.t) input
+=
+struct
+
+  open Bin_prot
+  
+  type t = (L.t, NetProcess.Input.t) input
+  [@@deriving bin_io]
+
+  let deserialize pubkey x =
+    match pubkey with
+    | None ->
+      failwith @@ "huxiang/replica/deserializer/deserialize: "^
+                  "input message is not signed"
+    | Some key ->
+      let originator_in_clique =
+        List.exists (fun { Address.owner } ->
+            Types.PublicKey.equal owner key
+          ) C.addresses
+      in
+      let buf = Types.HuxiangBytes.to_buf x in
+      if originator_in_clique then
+        bin_read_t buf ~pos_ref:(ref 0)
+      else
+        Input (NetProcess.Input.bin_read_t buf ~pos_ref:(ref 0))
 end
   
+
+module Make(P : NetProcess.S)(S : Process.Scheduler)(L : Leadership)(C : Clique) =
+  NetProcess.Compile
+    (Deserializer(L)(C))
+    (Serializer(L))
+    (Replica(P)(S)(L)(C))

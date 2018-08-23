@@ -119,7 +119,7 @@ struct
     lwt_debug fname ("read message "^(print_msg msg));%lwt
     match msg with
     | Msg { msg; uid } ->
-      let reply = Ack { uid } in      
+      let reply = Ack { uid } in
       LwtSocket.send provider (output reply);%lwt
       Lwt.return msg
     |  _ ->
