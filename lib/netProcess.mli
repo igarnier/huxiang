@@ -6,6 +6,7 @@ type input =
 
 and data =
   | Signed of { data : Bytes.t; pkey : Types.public_key }
+  | Raw of { data : Bytes.t }
 
 (* type input =
  *   {
@@ -33,7 +34,7 @@ end
 module type Deserializer =
 sig
   type t
-  val deserialize : Types.public_key -> Bytes.t -> Address.access_path -> t
+  val deserialize : Types.public_key option -> Bytes.t -> Address.access_path -> t
 end
 
 module Compile
