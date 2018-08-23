@@ -20,20 +20,17 @@ struct
 
   let frame_to_bytes (uid, frame) =
     let open NetProcess in
-    let signed_bytes = frame.sdata in
-    let route_bytes  = route_to_bytes frame.route in
-    let key_bytes    = frame.pkey in
-    Marshal.to_bytes (uid, signed_bytes, route_bytes, key_bytes) []
+    let route_bytes = route_to_bytes frame.route in
+    Marshal.to_bytes (uid, frame.data, route_bytes) []
 
   let frame_of_bytes bytes =
     let open NetProcess in
-    let (uid, sdata, route_bytes, key_bytes) : 
-      int64 * Bytes.t * Bytes.t * Bytes.t =
+    let (uid, data, route_bytes) :
+      int64 * NetProcess.data * Bytes.t =
       Marshal.from_bytes bytes 0
     in
     let route = route_of_bytes route_bytes in
-    let pkey  = Types.make_public_key key_bytes in
-    let frame = { sdata; route; pkey } in
+    let frame = { route; data } in
     (uid, frame)
 
   type message =
@@ -63,8 +60,7 @@ struct
     | Msg { msg; uid } ->
       let open NetProcess in
       let pths = Address.show_access_path msg.route in
-      let pkey = Bytes.to_string (msg.pkey :> Bytes.t) in
-      Printf.sprintf "msg(%s/%s/%Ld)" pkey pths uid
+      Printf.sprintf "msg(%s/%Ld)" pths uid
     | Ack { uid } ->
       Printf.sprintf "ack(%Ld)" uid
   
@@ -93,10 +89,16 @@ struct
    *   | exn ->
    *     Lwt.fail_with @@ "huxiang/node/deserialize_message: error caught: "^
    *                      (Printexc.to_string exn) *)
-    
+  let lwt_fail fname msg =
+    Lwt.fail_with @@ fname^": "^msg
+
+  let lwt_debug fname msg =
+    Lwt_log.debug_f "%s: %s" fname msg
+
   let input str =
+    let fname = "huxiang/node/input" in
     if String.length str < 4 then
-      Lwt.fail_with "huxiang/node/input: input message too short"
+      lwt_fail fname "input message too short"
     else
       let headr = String.head str 4 in
       match headr with
@@ -108,8 +110,8 @@ struct
         let tail  = String.tail str 4 in
         Lwt.return (Ack { uid = int64_of_bytes tail })
       | _ ->
-        Lwt.fail_with "huxiang/node/input: incorrect header"
-
+        lwt_fail fname "incorrect header"
+          
   let output msg =
     match msg with
     | Msg { msg; uid } ->
@@ -120,91 +122,106 @@ struct
       "ackn"^(bytes_of_int64 uid)
 
   let read_and_ack provider =
+    let fname = "huxiang/node/read_and_ack" in
     let%lwt str = LwtSocket.recv provider in
     let%lwt msg = input str in
-    Lwt_log.log_f ~level:Debug "reader: read message %s" (print_msg msg);%lwt
+    lwt_debug fname ("read message "^(print_msg msg));%lwt
     match msg with
     | Msg { msg; uid } ->
       let reply = Ack { uid } in      
       LwtSocket.send provider (output reply);%lwt
       Lwt.return msg
     |  _ ->
-      Lwt.fail_with "huxiang/node/read_and_ack: wrong message"
+      lwt_fail fname "wrong message"
 
   let write_and_get_acked out_msg (consumer : [`Req] LwtSocket.t) =
+    let fname = "huxiang/node/write_and_get_acked" in
     let%lwt serialized =
       try%lwt Lwt.return (output out_msg)
       with exn ->
-        (Lwt_log.log_f ~level:Debug "writer: error caught during serialization: %s" (Printexc.to_string exn);%lwt
-         Lwt.fail exn)
+        let message = 
+          "error caught during serialization: "^(Printexc.to_string exn) 
+        in
+        lwt_debug fname message;%lwt
+        Lwt.fail exn
     in
     LwtSocket.send consumer serialized;%lwt
-    Lwt_log.log_f ~level:Debug "writer: message %s sent, waiting for ack" (print_msg out_msg);%lwt
+    lwt_debug fname ("message sent, waiting for ack: "^(print_msg out_msg));%lwt
     let%lwt str = LwtSocket.recv consumer in
-    Lwt_log.log ~level:Debug "writer: ack received";%lwt
+    lwt_debug fname "ack received";%lwt
     let%lwt msg = input str in
     match msg with
     | Ack { uid } ->
       if not (Int64.equal uid (get_uid msg)) then
-        Lwt.fail_with "huxiang/node/write_and_get_acked: wrong uid"
+        lwt_fail fname "wrong uid"
       else
         Lwt.return ()
     | _ ->  
-      Lwt.fail_with "huxiang/node/write_and_get_acked: wrong message"
+      lwt_fail fname "wrong message"
         
   let read_from_ingoing ingoing = read_and_ack ingoing
 
   let write_to_outgoing { Address.msg; dests } uid (Dynamic table) =
+    let fname = "huxiang/node/write_to_outgoing" in
     Lwt_list.iter_p (fun (address, route) ->
         let%lwt socket = 
           try%lwt Lwt.return (table address)
           with
           | exn ->
-            (Lwt_log.log_f ~level:Debug "writer: error network table computation: %s" (Printexc.to_string exn);%lwt
-             Lwt.fail exn)
+            let message = 
+              "error in network table computation: "^(Printexc.to_string exn)
+            in
+            lwt_debug fname message;%lwt
+            Lwt.fail exn
         in
-        let sdata = S.sign msg in
-        let msg   = {
-          NetProcess.sdata;
-          route;
-          pkey = S.public_key
-        } in
-       write_and_get_acked (Msg { uid; msg }) socket
+        let msg  = 
+          let open NetProcess in
+          { data = Signed { data = S.sign msg; pkey = S.public_key };
+            route }
+        in
+        write_and_get_acked (Msg { uid; msg }) socket
       ) dests
         
   let reader_thread { ingoing; mqueue; process } =
+    let fname = "huxiang/node/reader_thread" in
     let rec loop process =
-      Lwt_log.log ~level:Debug "reader: loop entered";%lwt
+      lwt_debug fname "loop entered";%lwt
       let continue out next = (* factorised continuation *)
         (match out with
          | None -> Lwt.return ()
          | Some out ->
            Lwt_mvar.put mqueue out;%lwt
-           Lwt_log.log ~level:Debug "reader: put"
+           lwt_debug fname "put"
         );%lwt
         loop next
       in
       (* TODO: Here we need to parameterize the node by a scheduler /!!!!\*)
       match Process.evolve process with
       | (Input transition) :: _ ->
-        Lwt_log.log ~level:Debug "reader: Input transition";%lwt
+        lwt_debug fname "Input transition";%lwt
         (let%lwt msg = read_from_ingoing ingoing in
-         Lwt_log.log ~level:Debug "reader: read";%lwt
+         lwt_debug fname "read";%lwt
          let%lwt { Process.output; next } =
            try%lwt transition msg with
            | exn ->
-             Lwt_log.log_f ~level:Debug "reader: error caught in evolve: %s" (Printexc.to_string exn);%lwt
+             let message = 
+               "error caught in evolve: "^(Printexc.to_string exn) 
+             in
+             lwt_debug fname message;%lwt
              Lwt.fail exn
          in
          continue output next
         )
       | (NoInput transition) :: _ ->
-        Lwt_log.log ~level:Debug "reader: NoInput transition";%lwt
+        lwt_debug fname "NoInput transition";%lwt
         let%lwt { Process.output; next } =
           try%lwt transition with
           | exn ->
-            Lwt_log.log_f ~level:Debug "reader: error caught in evolve: %s" (Printexc.to_string exn);%lwt
-            Lwt.fail exn
+             let message = 
+               "error caught in evolve: "^(Printexc.to_string exn) 
+             in
+             lwt_debug fname message;%lwt
+             Lwt.fail exn
         in
         continue output next
       | [] ->
@@ -214,12 +231,13 @@ struct
     loop process
 
   let writer_thread { routing; mqueue } =
+    let fname = "huxiang/node/writer_thread" in
     let rec loop uid =
-      Lwt_log.log ~level:Debug "writer: loop entered";%lwt
+      lwt_debug fname "loop entered";%lwt
       let%lwt msg = Lwt_mvar.take mqueue in
-      Lwt_log.log ~level:Debug "writer: taken";%lwt
+      lwt_debug fname "taken";%lwt
       write_to_outgoing msg uid routing;%lwt
-      Lwt_log.log ~level:Debug "writer: written";%lwt
+      lwt_debug fname "written";%lwt
       loop Int64.(uid + one)
     in
     (* match P.initial_message with
