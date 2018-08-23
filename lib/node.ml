@@ -12,12 +12,6 @@ struct
 
   type frame = NetProcess.input
 
-  let route_to_bytes (r : Address.access_path) =
-    Marshal.to_bytes r []
-
-  let route_of_bytes bytes =
-    (Marshal.from_bytes bytes 0 : Address.access_path)
-
   let frame_to_bytes (uid, frame) =
     let open NetProcess in
     Marshal.to_bytes (uid, frame.data) []
@@ -160,7 +154,7 @@ struct
 
   let write_to_outgoing { Address.msg; dests } uid (Dynamic table) =
     let fname = "huxiang/node/write_to_outgoing" in
-    Lwt_list.iter_p (fun (address, route) ->
+    Lwt_list.iter_p (fun address ->
         let%lwt socket = 
           try%lwt Lwt.return (table address)
           with

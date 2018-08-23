@@ -64,13 +64,13 @@ struct
     | None -> state, None
     | Some { Address.msg; dests } ->
       let inside, outside =
-        List.partition (fun ({ Address.owner; _}, _) ->
+        List.partition (fun { Address.owner; _} ->
             Map.mem owner state
           ) dests
       in
       (* dispatch message internally *)
       let state =
-        List.fold_left (fun state (addr, _) ->
+        List.fold_left (fun state addr ->
             let data =
               NetProcess.({
                   data  = Raw { data = msg }

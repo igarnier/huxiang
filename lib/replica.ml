@@ -67,7 +67,7 @@ struct
   let broadcast (msg : L.t output_data) =
     let open Address in
     {
-      dests = List.map (fun addr -> (addr, Root)) C.addresses;
+      dests = C.addresses;
       msg
     }
 

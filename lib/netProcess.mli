@@ -1,19 +1,11 @@
 type input =
   {
-    route : Address.access_path;
     data  : data;
   }
 
 and data =
   | Signed of { data : Bytes.t; pkey : Types.public_key }
   | Raw of { data : Bytes.t }
-
-(* type input =
- *   {
- *     sdata : Bytes.t;
- *     route : Address.access_path;
- *     pkey  : Types.public_key
- *   } *)
 
 type output = Bytes.t Address.multi_dest
 
@@ -34,7 +26,7 @@ end
 module type Deserializer =
 sig
   type t
-  val deserialize : Types.public_key option -> Bytes.t -> Address.access_path -> t
+  val deserialize : Types.public_key option -> Bytes.t -> t
 end
 
 module Compile
