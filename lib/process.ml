@@ -157,47 +157,6 @@ let continue_with ?output state move =
   Lwt.return { output;
                next   = { move; state } }
 
-(* val sequence : ('s, 'i, 'o) t -> ('t, 'o, 'p) t -> ('s * 't, 'i, 'p) t *)
-
-(* let rec sequence p1 p2 =
- *   let rec proc =
- *     {
- *       state = (p1.state, p2.state);
- *       move
- *     }
- *   and move (st1, st2) =
- *     match p2.move st2 with
- *     | Stop -> Stop
- *     | NoInput result ->
- *       NoInput
- *         (let%lwt r = result in
- *          Lwt.return {
- *            r with
- *            next = sequence p1 r.next
- *          }
- *         )
- *     | Input f2 ->
- *       begin match p1.move st1 with
- *         | Stop -> Stop
- *         | NoInput result ->    
- *           NoInput
- *             (let%lwt r = result in
- *              (match r.output with
- *               | Some o ->
- *                 (let%lwt r = f2 o in
- *                  Lwt.return {
- *                    r with
- *                    next = sequence p1.next p2.next
- *                  })
- *               | None ->
- *                 failwith "")
- *             )
- *         | Input f1 ->
- *           Input (fun i ->
- *               failwith ""
- *             )
- *       end *)
-
 let rec precompose process g =
   let rec proc =
     {
