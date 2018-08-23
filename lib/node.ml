@@ -14,15 +14,15 @@ struct
 
   let frame_to_bytes (uid, frame) =
     let open NetProcess in
-    Marshal.to_bytes (uid, frame.data) []
+    Marshal.to_bytes (uid, frame.Input.data) []
 
   let frame_of_bytes bytes =
     let open NetProcess in
     let (uid, data, route_bytes) :
-      int64 * NetProcess.data * Bytes.t =
+      int64 * NetProcess.Input.data * Bytes.t =
       Marshal.from_bytes bytes 0
     in
-    let frame = { data } in
+    let frame = { Input.data } in
     (uid, frame)
 
   type message =
@@ -167,7 +167,7 @@ struct
         in
         let msg  = 
           let open NetProcess in
-          { data = Signed { data = S.sign msg; pkey = S.public_key } }
+          { Input.data = Signed { data = S.sign msg; pkey = S.public_key } }
         in
         write_and_get_acked (Msg { uid; msg }) socket
       ) dests

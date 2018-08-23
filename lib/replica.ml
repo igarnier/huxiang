@@ -13,11 +13,8 @@ type notification_kind =
 
 type notification = 
   { nkind  : notification_kind;
-    inputs : NetProcess.input list }
-
-let equal_notification n1 n2 =
-  equal_notification_kind n1.nkind n2.nkind &&
-  List.for_all2 NetProcess.equal_input n1.inputs n2.inputs
+    inputs : NetProcess.Input.t list }
+[@@deriving eq, bin_io]
 
 type ('l, 'i) input =
   | Leader of { proof : 'l }

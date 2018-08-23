@@ -1,16 +1,20 @@
-type input =
-  {
-    data  : data;
-  }
+module Input :
+sig
 
-and data =
-  | Signed of { data : Bytes.t; pkey : Types.PublicKey.t }
-  | Raw of { data : Bytes.t }
+  type t = { data : data }
+  and data =
+    | Signed of { data : Types.HuxiangBytes.t; pkey : Types.PublicKey.t }
+    | Raw of { data : Types.HuxiangBytes.t }
 
+  include Bin_prot.Binable.S with type t := t
+  include Types.Equalable with type t := t
+end
+
+type input  = Input.t
 type output = Bytes.t Address.multi_dest
 
-val equal_input : input -> input -> bool
-val equal_output : output -> output -> bool
+(* val equal_input : Input.t -> Input.t -> bool
+ * val equal_output : output -> output -> bool *)
 
 module type S = Process.S with type input = input
                            and type output = output

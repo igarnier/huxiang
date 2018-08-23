@@ -1,27 +1,32 @@
-type input =
-  {
-    (* route : Address.access_path; *)
-    data  : data;
-  }
+module Input =
+struct
 
-and data =
-  | Signed of { data : Bytes.t; pkey : Types.PublicKey.t }
-  | Raw of { data : Bytes.t }
+  type t = { data : data }
+  [@@deriving bin_io, eq]
+  
+  and data =
+    | Signed of { data : Types.HuxiangBytes.t; pkey : Types.PublicKey.t }
+    | Raw of { data : Types.HuxiangBytes.t }
+  [@@deriving bin_io, eq]
+
+end
+
+type input = Input.t
 
 type output = Bytes.t Address.multi_dest
 
 let equal_data d1 d2 =
   match d1, d2 with
-  | Signed { data = data1; pkey = pk1 }, Signed { data = data2; pkey = pk2 } ->
+  | Input.Signed { data = data1; pkey = pk1 }, Input.Signed { data = data2; pkey = pk2 } ->
     Bytes.equal data1 data2 &&
     Types.PublicKey.equal pk1 pk2
-  | Raw { data = data1 }, Raw { data = data2 } ->
+  | Input.Raw { data = data1 }, Input.Raw { data = data2 } ->
     Bytes.equal data1 data2
   | _ ->
     false
 
 let equal_input i1 i2 =
-  equal_data i1.data i2.data
+  equal_data i1.Input.data i2.Input.data
 
 let equal_output o1 o2 =
   Address.equal_multi_dest Bytes.equal o1 o2
@@ -62,14 +67,14 @@ struct
   let name = P.name
 
   let pre input =
-    match input.data with
-    | Signed { data; pkey } ->
+    match input.Input.data with
+    | Input.Signed { data; pkey } ->
       let spkey = 
         Sodium.Sign.Bytes.to_public_key (Types.PublicKey.to_bytes pkey) 
       in
       let bytes = Sodium.Sign.Bytes.sign_open spkey data in
       D.deserialize (Some pkey) bytes
-    | Raw { data } ->
+    | Input.Raw { data } ->
       D.deserialize None data
 
   let post output =
