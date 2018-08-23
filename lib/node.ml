@@ -20,8 +20,7 @@ struct
 
   let frame_to_bytes (uid, frame) =
     let open NetProcess in
-    let route_bytes = route_to_bytes frame.route in
-    Marshal.to_bytes (uid, frame.data, route_bytes) []
+    Marshal.to_bytes (uid, frame.data) []
 
   let frame_of_bytes bytes =
     let open NetProcess in
@@ -29,8 +28,7 @@ struct
       int64 * NetProcess.data * Bytes.t =
       Marshal.from_bytes bytes 0
     in
-    let route = route_of_bytes route_bytes in
-    let frame = { route; data } in
+    let frame = { data } in
     (uid, frame)
 
   type message =
@@ -59,8 +57,7 @@ struct
     match msg with
     | Msg { msg; uid } ->
       let open NetProcess in
-      let pths = Address.show_access_path msg.route in
-      Printf.sprintf "msg(%s/%Ld)" pths uid
+      Printf.sprintf "msg(%Ld)" uid
     | Ack { uid } ->
       Printf.sprintf "ack(%Ld)" uid
   
@@ -176,8 +173,7 @@ struct
         in
         let msg  = 
           let open NetProcess in
-          { data = Signed { data = S.sign msg; pkey = S.public_key };
-            route }
+          { data = Signed { data = S.sign msg; pkey = S.public_key } }
         in
         write_and_get_acked (Msg { uid; msg }) socket
       ) dests

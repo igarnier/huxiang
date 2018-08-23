@@ -73,7 +73,6 @@ struct
         List.fold_left (fun state (addr, _) ->
             let data =
               NetProcess.({
-                  route = Address.Root;
                   data  = Raw { data = msg }
                 }) in
             append_to_buffer state addr.Address.owner data

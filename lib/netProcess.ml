@@ -1,6 +1,6 @@
 type input =
   {
-    route : Address.access_path;
+    (* route : Address.access_path; *)
     data  : data;
   }
 
@@ -21,8 +21,7 @@ let equal_data d1 d2 =
     false
 
 let equal_input i1 i2 =
-  equal_data i1.data i2.data &&
-  Address.equal_access_path i1.route i2.route
+  equal_data i1.data i2.data
 
 let equal_output o1 o2 =
   Address.equal_multi_dest Bytes.equal o1 o2
@@ -41,7 +40,7 @@ end
 module type Deserializer =
 sig
   type t
-  val deserialize : Types.public_key option -> Bytes.t -> Address.access_path -> t
+  val deserialize : Types.public_key option -> Bytes.t -> t
 end
 
 module Compile
@@ -67,9 +66,9 @@ struct
     | Signed { data; pkey } ->
       let spkey = Sodium.Sign.Bytes.to_public_key (pkey :> Bytes.t) in
       let bytes = Sodium.Sign.Bytes.sign_open spkey data in
-      D.deserialize (Some pkey) bytes input.route
+      D.deserialize (Some pkey) bytes
     | Raw { data } ->
-      D.deserialize None data input.route
+      D.deserialize None data
 
   let post output =
     {
