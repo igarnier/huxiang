@@ -1,9 +1,18 @@
 type input =
   {
-    sdata : Bytes.t;
     route : Address.access_path;
-    pkey  : Types.public_key
+    data  : data;
   }
+
+and data =
+  | Signed of { data : Bytes.t; pkey : Types.public_key }
+
+(* type input =
+ *   {
+ *     sdata : Bytes.t;
+ *     route : Address.access_path;
+ *     pkey  : Types.public_key
+ *   } *)
 
 type output = Bytes.t Address.multi_dest
 

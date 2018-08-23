@@ -1,16 +1,23 @@
 type input =
   {
-    sdata : Bytes.t; (* signed ! *)
     route : Address.access_path;
-    pkey  : Types.public_key
+    data  : data;
   }
+
+and data =
+  | Signed of { data : Bytes.t; pkey : Types.public_key }
 
 type output = Bytes.t Address.multi_dest
 
+let equal_data d1 d2 =
+  match d1, d2 with
+  | Signed { data = data1; pkey = pk1 }, Signed { data = data2; pkey = pk2 } ->
+    Bytes.equal data1 data2 &&
+    Types.equal_public_key pk1 pk2
+
 let equal_input i1 i2 =
-  Bytes.equal i1.sdata i2.sdata &&
-  Address.equal_access_path i1.route i2.route &&
-  Types.equal_public_key i1.pkey i2.pkey
+  equal_data i1.data i2.data &&
+  Address.equal_access_path i1.route i2.route
 
 let equal_output o1 o2 =
   Address.equal_multi_dest Bytes.equal o1 o2
@@ -51,9 +58,11 @@ struct
   let name = P.name
 
   let pre input =
-    let pkey  = Sodium.Sign.Bytes.to_public_key (input.pkey :> Bytes.t) in
-    let bytes = Sodium.Sign.Bytes.sign_open pkey input.sdata in
-    D.deserialize input.pkey bytes input.route
+    match input.data with
+    | Signed { data; pkey } ->
+      let spkey = Sodium.Sign.Bytes.to_public_key (pkey :> Bytes.t) in
+      let bytes = Sodium.Sign.Bytes.sign_open spkey data in
+      D.deserialize pkey bytes input.route
 
   let post output =
     {
