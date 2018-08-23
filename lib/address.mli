@@ -1,6 +1,6 @@
 type t = 
   { 
-    owner : Types.public_key;
+    owner : Types.PublicKey.t;
     pname : Name.t
   }
 

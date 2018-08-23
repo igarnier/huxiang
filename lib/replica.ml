@@ -160,9 +160,8 @@ struct
       )
 
   let blame proof msg =
-    let leader_pkey = (L.leader proof :> Bytes.t) in
-    let guilty      = Bytes.to_string leader_pkey in
-    Lwt.fail_with @@ msg^" Originator: "^guilty
+    let leader_pkey = Types.PublicKey.show (L.leader proof) in
+    Lwt.fail_with @@ msg^" Originator: "^leader_pkey
 
   let rec process state =
     Process.with_input begin function

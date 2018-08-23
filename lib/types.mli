@@ -1,38 +1,6 @@
 (* -------------------------------------------------------------------------- *)
 
-(** Type of public identities (e.g. hash of public key). *)
-
-type public_key = private Bytes.t
-
-val make_public_key : Bytes.t -> public_key
-
-(** Pretty printing public keys *)
-val pp_public_key : Format.formatter -> public_key -> unit
-
-val show_public_key : public_key -> string
-
-(** Testing public keys for equality *)
-val equal_public_key : public_key -> public_key -> bool
-
-(** Total order on public keys, inherited from Bytes.t *)
-val compare_public_key : public_key -> public_key -> int
-
-(** Type of hashs *)
-type hash = private Bytes.t
-
-val make_hash : Bytes.t -> hash
-
-val equal_hash : hash -> hash -> bool
-
-(* -------------------------------------------------------------------------- *)
-
 (** Interfaces for common operations. *)
-
-module type Hashable =
-sig
-  type t
-  val hash : t -> hash
-end
 
 type json = Yojson.Safe.json
 
@@ -56,7 +24,66 @@ sig
   val show : t -> string
 end
 
+module type Ordered = Map.OrderedType
 
+(* -------------------------------------------------------------------------- *)
+
+(** Type of Bytes serializable with bin_prot. *)
+module HuxiangBytes :
+sig
+  type t = Bytes.t
+
+  include (module type of Bytes with type t := t)
+  include Showable with type t := t
+  include Bin_prot.Binable.S with type t := t
+end
+
+(* -------------------------------------------------------------------------- *)
+
+(** Type of public identities (e.g. hash of public key). *)
+module PublicKey :
+sig
+  type t
+  include Bin_prot.Binable.S with type t := t
+  include Equalable with type t := t
+  include Showable with type t := t
+  include Ordered with type t := t
+
+  val make : Bytes.t -> t
+  val to_bytes : t -> Bytes.t
+end
+
+(* -------------------------------------------------------------------------- *)
+
+(** Type of public identities (e.g. hash of public key). *)
+
+(* type public_key = private Bytes.t
+ * 
+ * val make_public_key : Bytes.t -> public_key
+ * 
+ * (\** Pretty printing public keys *\)
+ * val pp_public_key : Format.formatter -> public_key -> unit
+ * 
+ * val show_public_key : public_key -> string
+ * 
+ * (\** Testing public keys for equality *\)
+ * val equal_public_key : public_key -> public_key -> bool
+ * 
+ * (\** Total order on public keys, inherited from Bytes.t *\)
+ * val compare_public_key : public_key -> public_key -> int *)
+
+(** Type of hashs *)
+type hash = private Bytes.t
+
+val make_hash : Bytes.t -> hash
+
+val equal_hash : hash -> hash -> bool
+
+module type Hashable =
+sig
+  type t
+  val hash : t -> hash
+end
 (* -------------------------------------------------------------------------- *)
 
 (** In order to make the coalescent product work, one needs a way to
@@ -100,6 +127,6 @@ sig
   val check : t -> t -> bool
 
   (** Each proof of leadership also points to the public key of the leader. *)
-  val leader : t -> public_key
+  val leader : t -> PublicKey.t
 
 end

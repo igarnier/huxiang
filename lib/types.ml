@@ -1,21 +1,90 @@
+module type Equalable =
+sig
+  type t
+  val equal : t -> t -> bool
+end
+
+module type Showable =
+sig
+  type t
+  val pp : Format.formatter -> t -> unit
+  val show : t -> string
+end
+
+type json = Yojson.Safe.json
+
+module type Jsonable =
+sig
+  type t
+  val to_yojson : t -> json
+  val of_yojson : json -> (t, string) Result.result
+end
+
+module type Ordered = Map.OrderedType
+
 (* -------------------------------------------------------------------------- *)
+(* Easily serializable bytes *)
 
-type public_key = Bytes.t
+module HuxiangBytes =
+struct
 
-let make_public_key x = x
+  type t = Bytes.t
+  [@@deriving show]
 
-let pp_public_key fmt pkey =
-  (* let bytes = Sodium.Sign.Bytes.of_public_key pkey in *)
-  Format.pp_print_string fmt (Bytes.to_string pkey)
+  open Bin_prot
 
-let show_public_key pkey =
-  (* let bytes = Sodium.Sign.Bytes.of_public_key pkey in *)
-  Bytes.to_string pkey (* bytes *)
+  include (Bytes : module type of Bytes with type t := t)
 
-let equal_public_key = Bytes.equal
-  (* Sodium.Sign.equal_public_keys *)
+  let bin_t        = Std.bin_bytes
+  let bin_shape_t  = Std.bin_shape_bytes
+  let bin_writer_t = Std.bin_writer_bytes
+  let bin_reader_t = Std.bin_reader_bytes
+  let bin_read_t   = Std.bin_read_bytes
+  let bin_write_t  = Std.bin_write_bytes
+  let bin_size_t   = Std.bin_size_bytes
+  let __bin_read_t__ = Std.__bin_read_bytes__
+end
 
-let compare_public_key = Bytes.compare
+
+(* -------------------------------------------------------------------------- *)
+(* Public keys *)
+
+module PublicKey :
+sig
+  type t = Bytes.t
+  include Bin_prot.Binable.S with type t := t
+  include Equalable with type t := t
+  include Showable with type t := t
+  include Ordered with type t := t
+
+  val make : Bytes.t -> t
+  val to_bytes : t -> Bytes.t
+end
+=
+struct
+
+  include HuxiangBytes
+
+  let make x = x
+  let to_bytes x = x
+end
+
+(* type public_key = Bytes.t
+ * 
+ * let make_public_key x = x
+ * 
+ * let pp_public_key fmt pkey =
+ *   (\* let bytes = Sodium.Sign.Bytes.of_public_key pkey in *\)
+ *   Format.pp_print_string fmt (Bytes.to_string pkey)
+ * 
+ * let show_public_key pkey =
+ *   (\* let bytes = Sodium.Sign.Bytes.of_public_key pkey in *\)
+ *   Bytes.to_string pkey (\* bytes *\)
+ * 
+ * let equal_public_key = Bytes.equal
+ *   (\* Sodium.Sign.equal_public_keys *\)
+ * 
+ * let compare_public_key = Bytes.compare *)
 
 type hash = Bytes.t
 
@@ -35,30 +104,6 @@ sig
   val hash : t -> hash
 end
 
-type json = Yojson.Safe.json
-
-module type Jsonable =
-sig
-  type t
-  val to_yojson : t -> json
-  val of_yojson : json -> (t, string) Result.result
-end
-
-module type Equalable =
-sig
-  type t
-  val equal : t -> t -> bool
-end
-
-module type Showable =
-sig
-  type t
-  val pp : Format.formatter -> t -> unit
-  val show : t -> string
-end
-
-module type Ordered = Map.OrderedType
-
 (* -------------------------------------------------------------------------- *)
 
 module type Leadership =
@@ -75,6 +120,6 @@ sig
   val prev : t -> hash
   val root : t
   val check : t -> t -> bool
-  val leader : t -> public_key
+  val leader : t -> PublicKey.t
 
 end
