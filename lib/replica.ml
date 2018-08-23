@@ -34,8 +34,6 @@ module Make(P : NetProcess.S)(S : Process.Scheduler)(L : Leadership)(C : Clique)
 =
 struct
 
-  (* TODO: bool=performed a transition or not, should ultimately be 
-     transition_name option. *)
   type nonrec input = (L.t, P.input) input
 
   type output = L.t output_data Address.multi_dest
