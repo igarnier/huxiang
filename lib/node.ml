@@ -5,7 +5,7 @@ module LwtSocket = Zmq_lwt.Socket
 module Json = Yojson.Safe
 
 
-module Make(P : NetProcess.S)(S : Signer.S) =
+module Make(P : NetProcess.S) =
 struct
 
   type network_map = Address.t -> string
@@ -40,7 +40,9 @@ struct
       ingoing  : [`Rep] LwtSocket.t; (* recv; send *)
       routing  : routing;
       mqueue   : NetProcess.output Lwt_mvar.t;
-      process  : P.state NetProcess.t
+      process  : P.state NetProcess.t;
+      skey     : Crypto.Secret.t;
+      pkey     : Crypto.Public.t
     }
 
   let get_uid = function
@@ -152,7 +154,7 @@ struct
         
   let read_from_ingoing ingoing = read_and_ack ingoing
 
-  let write_to_outgoing { Address.msg; dests } uid (Dynamic table) =
+  let write_to_outgoing { Address.msg; dests } uid (Dynamic table) skey pkey =
     let fname = "huxiang/node/write_to_outgoing" in
     Lwt_list.iter_p (fun address ->
         let%lwt socket = 
@@ -167,7 +169,7 @@ struct
         in
         let msg  = 
           let open NetProcess in
-          { Input.data = Signed { data = S.sign msg; pkey = S.public_key } }
+          { Input.data = Signed { data = Crypto.sign skey msg; pkey } }
         in
         write_and_get_acked (Msg { uid; msg }) socket
       ) dests
@@ -220,13 +222,13 @@ struct
     in
     loop process
 
-  let writer_thread { routing; mqueue } =
+  let writer_thread { routing; mqueue; skey; pkey } =
     let fname = "huxiang/node/writer_thread" in
     let rec loop uid =
       lwt_debug fname "loop entered";%lwt
       let%lwt msg = Lwt_mvar.take mqueue in
       lwt_debug fname "taken";%lwt
-      write_to_outgoing msg uid routing;%lwt
+      write_to_outgoing msg uid routing skey pkey;%lwt
       lwt_debug fname "written";%lwt
       loop Int64.(uid + one)
     in
@@ -265,7 +267,7 @@ struct
   (* let check_uniq l =
    *   List.length (List.sort_uniq String.compare l) = (List.length l) *)
 
-  let start_dynamic ~listening ~network_map =
+  let start ~listening ~network_map ~skey ~pkey =
     with_context (fun ctx ->
         let ingoing =
           let sck = Socket.(create ctx rep) in
@@ -283,7 +285,9 @@ struct
             ingoing;
             routing = Dynamic (fun x -> get_socket ctx table (network_map x));
             mqueue  = Lwt_mvar.create_empty ();
-            process = P.thread
+            process = P.thread;
+            skey;
+            pkey
           }
         in
         let program =
