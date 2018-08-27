@@ -9,7 +9,7 @@ sig
   val consistent : t -> t -> bool
 end
 
-module Make(Data : CheckableType)(L : Leadership) =
+module Make(Data : CheckableType)(L : Leadership.S) =
 struct
 
   type node = {

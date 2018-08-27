@@ -1,6 +1,6 @@
 type t =
   {
-    owner : Types.PublicKey.t;
+    owner : Crypto.Public.t;
     pname : Name.t
   }
 [@@deriving show, eq]

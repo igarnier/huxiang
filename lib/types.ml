@@ -60,25 +60,25 @@ end
 (* -------------------------------------------------------------------------- *)
 (* Public keys *)
 
-module PublicKey :
-sig
-  type t = Bytes.t
-  include Bin_prot.Binable.S with type t := t
-  include Equalable with type t := t
-  include Showable with type t := t
-  include Ordered with type t := t
-
-  val make : Bytes.t -> t
-  val to_bytes : t -> Bytes.t
-end
-=
-struct
-
-  include HuxiangBytes
-
-  let make x = x
-  let to_bytes x = x
-end
+(* module PublicKey :
+ * sig
+ *   type t = Bytes.t
+ *   include Bin_prot.Binable.S with type t := t
+ *   include Equalable with type t := t
+ *   include Showable with type t := t
+ *   include Ordered with type t := t
+ * 
+ *   val make : Bytes.t -> t
+ *   val to_bytes : t -> Bytes.t
+ * end
+ * =
+ * struct
+ * 
+ *   include HuxiangBytes
+ *       
+ *   let make x = x
+ *   let to_bytes x = x
+ * end *)
 
 (* type public_key = Bytes.t
  * 
@@ -113,24 +113,4 @@ module type Hashable =
 sig
   type t
   val hash : t -> hash
-end
-
-(* -------------------------------------------------------------------------- *)
-
-module type Leadership =
-sig
-
-  type t
-
-  include Hashable with type t := t
-  include Equalable with type t := t
-  (* include Jsonable with type t := t *)
-  include Showable with type t := t
-  include Bin_prot.Binable.S with type t := t
-
-  val prev : t -> hash
-  val root : t
-  val check : t -> t -> bool
-  val leader : t -> PublicKey.t
-
 end

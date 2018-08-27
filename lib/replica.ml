@@ -27,7 +27,7 @@ type 'l output_data =
   | Output of Types.HuxiangBytes.t
 [@@deriving bin_io]
 
-module Replica(P : NetProcess.S)(S : Process.Scheduler)(L : Leadership)(C : Clique) :
+module Replica(P : NetProcess.S)(S : Process.Scheduler)(L : Leadership.S)(C : Clique) :
   Process.S with type input = (L.t, P.input) input
              and type output = L.t output_data Address.multi_dest
 =
@@ -159,7 +159,7 @@ struct
       )
 
   let blame proof msg =
-    let leader_pkey = Types.PublicKey.show (L.leader proof) in
+    let leader_pkey = Crypto.Public.show (L.leader proof) in
     Lwt.fail_with @@ msg^" Originator: "^leader_pkey
 
   let rec process state =
@@ -290,7 +290,7 @@ struct
            
 end
 
-module Serializer(L : Leadership) :
+module Serializer(L : Leadership.S) :
   NetProcess.Serializer 
   with type t = L.t output_data
 =
@@ -309,7 +309,7 @@ struct
     
 end
 
-module Deserializer(L : Leadership)(C : Clique) :
+module Deserializer(L : Leadership.S)(C : Clique) :
   NetProcess.Deserializer 
   with type t = (L.t, NetProcess.Input.t) input
 =
@@ -328,7 +328,7 @@ struct
     | Some key ->
       let originator_in_clique =
         List.exists (fun { Address.owner } ->
-            Types.PublicKey.equal owner key
+            Crypto.Public.equal owner key
           ) C.addresses
       in
       let buf = Types.HuxiangBytes.to_buf x in
@@ -339,7 +339,7 @@ struct
 end
   
 
-module Make(P : NetProcess.S)(S : Process.Scheduler)(L : Leadership)(C : Clique) =
+module Make(P : NetProcess.S)(S : Process.Scheduler)(L : Leadership.S)(C : Clique) =
   NetProcess.Compile
     (Deserializer(L)(C))
     (Serializer(L))

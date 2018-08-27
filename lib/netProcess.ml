@@ -5,7 +5,7 @@ struct
   [@@deriving bin_io, eq]
   
   and data =
-    | Signed of { data : Types.HuxiangBytes.t; pkey : Types.PublicKey.t }
+    | Signed of { data : Types.HuxiangBytes.t; pkey : Crypto.Public.t }
     | Raw of { data : Types.HuxiangBytes.t }
   [@@deriving bin_io, eq]
 
@@ -19,7 +19,7 @@ let equal_data d1 d2 =
   match d1, d2 with
   | Input.Signed { data = data1; pkey = pk1 }, Input.Signed { data = data2; pkey = pk2 } ->
     Bytes.equal data1 data2 &&
-    Types.PublicKey.equal pk1 pk2
+    Crypto.Public.equal pk1 pk2
   | Input.Raw { data = data1 }, Input.Raw { data = data2 } ->
     Bytes.equal data1 data2
   | _ ->
@@ -45,7 +45,7 @@ end
 module type Deserializer =
 sig
   type t
-  val deserialize : Types.PublicKey.t option -> Bytes.t -> t
+  val deserialize : Crypto.Public.t option -> Bytes.t -> t
 end
 
 module Compile
@@ -69,10 +69,7 @@ struct
   let pre input =
     match input.Input.data with
     | Input.Signed { data; pkey } ->
-      let spkey = 
-        Sodium.Sign.Bytes.to_public_key (Types.PublicKey.to_bytes pkey) 
-      in
-      let bytes = Sodium.Sign.Bytes.sign_open spkey data in
+      let bytes = Crypto.sign_open pkey data in
       D.deserialize (Some pkey) bytes
     | Input.Raw { data } ->
       D.deserialize None data

@@ -2,7 +2,7 @@ module type Params =
 sig
   val processes : (module NetProcess.S) list
   val addresses : Address.t list
-  val owner     : Types.PublicKey.t
+  val owner     : Crypto.Public.t
 end
 
 module Make(P : Params) : NetProcess.S =
@@ -15,9 +15,9 @@ struct
       
   module Map =
     Batteries.Map.Make(struct
-      type t = Types.PublicKey.t
+      type t = Crypto.Public.t
                  
-      let compare = Types.PublicKey.compare
+      let compare = Crypto.Public.compare
     end)
 
   type proc_state = {
@@ -31,9 +31,9 @@ struct
 
   let _ =
     (* Sanity check *)
-    let owners' = List.sort_uniq Types.PublicKey.compare owners in
+    let owners' = List.sort_uniq Crypto.Public.compare owners in
     assert (List.length owners = List.length owners');
-    assert (List.exists (Types.PublicKey.equal P.owner) owners)
+    assert (List.exists (Crypto.Public.equal P.owner) owners)
 
   let get state pkey =
     Map.find pkey state
@@ -56,7 +56,7 @@ struct
 
   let key_is_in_clique pkey =
     List.exists (fun owner ->
-        Types.PublicKey.equal owner pkey
+        Crypto.Public.equal owner pkey
       ) owners
       
   let reroute state (output : Bytes.t Address.multi_dest option) =

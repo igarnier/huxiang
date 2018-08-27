@@ -3,7 +3,7 @@ sig
 
   type t = { data : data }
   and data =
-    | Signed of { data : Types.HuxiangBytes.t; pkey : Types.PublicKey.t }
+    | Signed of { data : Types.HuxiangBytes.t; pkey : Crypto.Public.t }
     | Raw of { data : Types.HuxiangBytes.t }
 
   include Bin_prot.Binable.S with type t := t
@@ -30,7 +30,7 @@ end
 module type Deserializer =
 sig
   type t
-  val deserialize : Types.PublicKey.t option -> Bytes.t -> t
+  val deserialize : Crypto.Public.t option -> Bytes.t -> t
 end
 
 module Compile
