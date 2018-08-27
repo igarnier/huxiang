@@ -43,19 +43,9 @@ struct
 
 end
 
-module NetPing =
-  NetProcess.Compile
-    (struct
-      include I
-      let deserializer _ = bin_reader_t
-    end)
-    (struct
-      include O
-      let serializer = bin_writer_t
-    end)
-    (Ping)
+let compiled = NetProcess.compile (fun _ -> I.bin_reader_t) O.bin_writer_t (module Ping)
 
-module PingNode = Huxiang.Node.Make(NetPing)
+module PingNode = Huxiang.Node.Make((val compiled))
 
 let _ =
   let () = Lwt_log.add_rule "*" Lwt_log.Debug in
