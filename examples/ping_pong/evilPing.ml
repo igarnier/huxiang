@@ -2,25 +2,31 @@ open Batteries
 open Huxiang
 open Huxiang.Types
 
-module PingProcess =
+module I = Messages.PongMsg
+module O = Messages.PingMsg
+
+module Ping 
+    : Process.S with type input  = I.t
+                 and type output = O.t Address.multi_dest
+=
 struct
 
-  module I = Messages.PongMsg
-  module O = Messages.PingMsg
-               
+  type input  = I.t
+  type output = O.t Address.multi_dest
+
   type state = unit
   [@@deriving show]
 
-  let name = Process.Name.atom "ping"
+  let name = Name.atom "ping"
 
   let rec main_loop () =
     Process.with_input (fun (I.Pong i) ->
-        let output = Process.(O.Ping (Random.int 42) @ Directory.pong_node) in
+        let output = Address.(O.Ping (Random.int 42) @. Directory.pong_node) in
         Process.continue_with ~output () main_loop
       )
 
   let process state =
-    let output = Process.(O.Ping 0 @ Directory.pong_node) in
+    let output = Address.(O.Ping 0 @. Directory.pong_node) in
     Process.without_input
       (Process.continue_with ~output state main_loop)
 
@@ -29,18 +35,32 @@ struct
       Process.move  = process;
       Process.state = ()
     }
-              
+
 end
 
-module PingNode = Huxiang.Node.Make(PingProcess)
+module NetPing =
+  NetProcess.Compile
+    (struct
+      include I
+      let deserializer _ = bin_reader_t
+    end)
+    (struct
+      include O
+      let serializer = bin_writer_t
+    end)
+    (Ping)
+
+module PingNode = Huxiang.Node.Make(NetPing)
 
 let _ =
   let () = Lwt_log.add_rule "*" Lwt_log.Debug in
   Lwt_log.default := (Lwt_log.channel
-                        ~template:"$(date).$(milliseconds) [$(level)] $(message)"
+                        ~template:"[$(level)] $(message)"
                         ~channel:Lwt_io.stderr
                         ~close_mode:`Keep
                         ());
-  PingNode.start_dynamic
+  PingNode.start
     ~listening:"tcp://127.0.0.1:5556"
     ~network_map:(fun _ -> "tcp://127.0.0.1:5557")
+    ~skey:Directory.ping_skey
+    ~pkey:Directory.ping_pkey

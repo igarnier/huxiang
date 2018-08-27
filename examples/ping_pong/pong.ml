@@ -2,20 +2,24 @@ open Batteries
 open Huxiang
 open Huxiang.Types
 
-module PongProcess =
+module O = Messages.PongMsg
+module I = Messages.PingMsg
+
+
+module Pong =
 struct
 
-  module I = Messages.PingMsg
-  module O = Messages.PongMsg
+  type input  = I.t
+  type output = O.t Address.multi_dest
                
   type state = unit
   [@@deriving show]
 
-  let name = Process.Name.atom "pong"
+  let name = Name.atom "pong"
 
   let rec main_loop state =
     Process.with_input (fun (I.Ping i) ->
-        let output = Process.(O.Pong i @ Directory.ping_node) in
+        let output = Address.(O.Pong i @. Directory.ping_node) in
         Process.continue_with ~output state main_loop
       )
 
@@ -27,7 +31,19 @@ struct
       
 end
 
-module PongNode = Huxiang.Node.Make(PongProcess)
+module NetPong =
+  NetProcess.Compile
+    (struct
+      include I
+      let deserializer _ = bin_reader_t
+    end)
+    (struct
+      include O
+      let serializer = bin_writer_t
+    end)
+    (Pong)
+
+module PongNode = Huxiang.Node.Make(NetPong)
 
 let _ =
   let () = Lwt_log.add_rule "*" Lwt_log.Debug in
@@ -36,7 +52,9 @@ let _ =
                         ~channel:Lwt_io.stderr
                         ~close_mode:`Keep
                         ());  
-  PongNode.start_dynamic
+  PongNode.start
     ~listening:"tcp://127.0.0.1:5557"
     ~network_map:(fun _ -> "tcp://127.0.0.1:5556")
+    ~skey:Directory.pong_skey
+    ~pkey:Directory.pong_pkey
 

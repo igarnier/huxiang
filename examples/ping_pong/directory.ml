@@ -1,15 +1,19 @@
 open Huxiang
 
+let pong_skey, pong_pkey = Crypto.seeded_key_pair "pong"
+
 let pong_node =
   let open Process in
   {
-    Address.owner = Bytes.of_string "pong_owner";
+    Address.owner = pong_pkey;
     pname = Name.atom "pong"
   }
+
+let ping_skey, ping_pkey = Crypto.seeded_key_pair "ping"
 
 let ping_node =
   let open Process in
   {
-    Address.owner = Bytes.of_string "ping_owner";
+    Address.owner = ping_pkey;
     pname = Name.atom "ping"
   }
