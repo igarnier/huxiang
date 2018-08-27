@@ -52,55 +52,113 @@ sig
   val deserializer : Crypto.Public.t option -> t Type_class.reader
 end
 
-module Compile
-    (D : Deserializer)
-    (S : Serializer)
-    (P : Process.S with type input = D.t 
-                    and type output = S.t Address.multi_dest)
-    : S with type state = P.state
- =
-struct
+let compile 
+    (type inp) (type outp_data) (type st)
+    (deserializer : Crypto.Public.t option -> inp Type_class.reader)
+    (serializer : outp_data Type_class.writer)
+    (p : (module Process.S with type input = inp
+                           and type output = outp_data Address.multi_dest
+                           and type state  = st)) =
+  let module P : Process.S with type input = inp
+                           and type output = outp_data Address.multi_dest
+                           and type state  = st  = (val p) in
+  let module Result = struct
 
-  type nonrec input  = input 
-  type nonrec output = output
+    type nonrec input  = input
+    type nonrec output = output
 
-  type state = P.state
+    type state = P.state
 
-  let show_state = P.show_state
+    let show_state = P.show_state
 
-  let name = P.name
+    let name = P.name
 
-  let pre input =
-    match input.Input.data with
-    | Input.Signed { data; pkey } ->
-      let bytes  = Crypto.sign_open pkey data in
-      let buffer =
-        let b = Common.create_buf (Bytes.length bytes) in
-        Common.blit_bytes_buf bytes b ~len:(Bytes.length bytes);
-        b
-      in
-      let reader = D.deserializer (Some pkey) in
-      reader.read buffer ~pos_ref:(ref 0)
-    | Input.Raw { data = bytes } ->
-      let buffer =
-        let b = Common.create_buf (Bytes.length bytes) in
-        Common.blit_bytes_buf bytes b ~len:(Bytes.length bytes);
-        b
-      in
-      let reader = D.deserializer None in
-      reader.read buffer ~pos_ref:(ref 0)
+    let pre (input : Input.t) =
+      match input.Input.data with
+      | Input.Signed { data; pkey } ->
+        let bytes  = Crypto.sign_open pkey data in
+        let buffer =
+          let b = Common.create_buf (Bytes.length bytes) in
+          Common.blit_bytes_buf bytes b ~len:(Bytes.length bytes);
+          b
+        in
+        let reader = deserializer (Some pkey) in
+        reader.read buffer ~pos_ref:(ref 0)
+      | Input.Raw { data = bytes } ->
+        let buffer =
+          let b = Common.create_buf (Bytes.length bytes) in
+          Common.blit_bytes_buf bytes b ~len:(Bytes.length bytes);
+          b
+        in
+        let reader = deserializer None in
+        reader.read buffer ~pos_ref:(ref 0)
 
-  let post (output : P.output) =
-    let buf   = Utils.bin_dump S.serializer output.msg in
-    let len   = Common.buf_len buf in
-    let bytes = Bytes.create len in
-    Common.blit_buf_bytes buf bytes ~len;
-    {
-      output with
-      Address.msg = bytes
-    }
+    let post (output : P.output) =
+      let buf   = Utils.bin_dump serializer output.msg in
+      let len   = Common.buf_len buf in
+      let bytes = Bytes.create len in
+      Common.blit_buf_bytes buf bytes ~len;
+      {
+        output with
+        Address.msg = bytes
+      }
 
-  let thread =
-    Process.(postcompose (precompose P.thread pre) post)
+    let thread =
+      Process.(postcompose (precompose P.thread pre) post)
 
-end
+  end in
+  (module Result : S with type state = st)
+
+
+(* module Compile
+ *     (D : Deserializer)
+ *     (S : Serializer)
+ *     (P : Process.S with type input = D.t 
+ *                     and type output = S.t Address.multi_dest)
+ *     : S with type state = P.state
+ *  =
+ * struct
+ * 
+ *   type nonrec input  = input 
+ *   type nonrec output = output
+ * 
+ *   type state = P.state
+ * 
+ *   let show_state = P.show_state
+ * 
+ *   let name = P.name
+ * 
+ *   let pre input =
+ *     match input.Input.data with
+ *     | Input.Signed { data; pkey } ->
+ *       let bytes  = Crypto.sign_open pkey data in
+ *       let buffer =
+ *         let b = Common.create_buf (Bytes.length bytes) in
+ *         Common.blit_bytes_buf bytes b ~len:(Bytes.length bytes);
+ *         b
+ *       in
+ *       let reader = D.deserializer (Some pkey) in
+ *       reader.read buffer ~pos_ref:(ref 0)
+ *     | Input.Raw { data = bytes } ->
+ *       let buffer =
+ *         let b = Common.create_buf (Bytes.length bytes) in
+ *         Common.blit_bytes_buf bytes b ~len:(Bytes.length bytes);
+ *         b
+ *       in
+ *       let reader = D.deserializer None in
+ *       reader.read buffer ~pos_ref:(ref 0)
+ * 
+ *   let post (output : P.output) =
+ *     let buf   = Utils.bin_dump S.serializer output.msg in
+ *     let len   = Common.buf_len buf in
+ *     let bytes = Bytes.create len in
+ *     Common.blit_buf_bytes buf bytes ~len;
+ *     {
+ *       output with
+ *       Address.msg = bytes
+ *     }
+ * 
+ *   let thread =
+ *     Process.(postcompose (precompose P.thread pre) post)
+ * 
+ * end *)

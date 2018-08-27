@@ -31,9 +31,11 @@ sig
   val deserializer : Crypto.Public.t option -> t Bin_prot.Type_class.reader
 end
 
-module Compile
-    (D : Deserializer)
-    (S : Serializer)
-    (P : Process.S with type input = D.t 
-                    and type output = S.t Address.multi_dest)
-    : S with type state = P.state
+val compile :
+  (Crypto.Public.t option -> 'a Bin_prot.Type_class.reader) ->
+  'b Bin_prot.Type_class.writer ->
+  (module Process.S 
+    with type input = 'a 
+     and type output = 'b Address.multi_dest 
+     and type state = 'c) ->
+  (module S with type state = 'c)

@@ -345,7 +345,16 @@ end
  
 
 module Make(P : NetProcess.S)(S : Process.Scheduler)(L : Leadership.S)(C : Clique) =
-  NetProcess.Compile
-    (Deserializer(L)(C))
-    (Serializer(L))
-    (Replica(P)(S)(L)(C))
+struct
+  module Dsz = Deserializer(L)(C)
+
+  module Sz  = Serializer(L)
+
+  module Rep = Replica(P)(S)(L)(C)
+
+  let result = NetProcess.compile Dsz.deserializer Sz.serializer (module Rep)
+
+  module Outcome = (val result)
+
+  include Outcome
+end
