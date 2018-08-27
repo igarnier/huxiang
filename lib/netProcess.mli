@@ -13,9 +13,6 @@ end
 type input  = Input.t
 type output = Bytes.t Address.multi_dest
 
-(* val equal_input : Input.t -> Input.t -> bool
- * val equal_output : output -> output -> bool *)
-
 module type S = Process.S with type input = input
                            and type output = output
 
@@ -23,14 +20,15 @@ type 's t = ('s, input, output) Process.t
 
 module type Serializer =
 sig
-  type t
-  val serialize : t -> Bytes.t
+  type t 
+
+  val serializer : t Bin_prot.Type_class.writer
 end
 
 module type Deserializer =
 sig
   type t
-  val deserialize : Crypto.Public.t option -> Bytes.t -> t
+  val deserializer : Crypto.Public.t option -> t Bin_prot.Type_class.reader
 end
 
 module Compile

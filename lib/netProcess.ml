@@ -1,3 +1,5 @@
+open Bin_prot
+
 module Input =
 struct
 
@@ -36,16 +38,18 @@ module type S = Process.S with type input = input
 
 type 's t = ('s, input, output) Process.t
 
+
 module type Serializer =
 sig
-  type t
-  val serialize : t -> Bytes.t
+  type t 
+
+  val serializer : t Type_class.writer
 end
 
 module type Deserializer =
 sig
   type t
-  val deserialize : Crypto.Public.t option -> Bytes.t -> t
+  val deserializer : Crypto.Public.t option -> t Type_class.reader
 end
 
 module Compile
@@ -69,15 +73,31 @@ struct
   let pre input =
     match input.Input.data with
     | Input.Signed { data; pkey } ->
-      let bytes = Crypto.sign_open pkey data in
-      D.deserialize (Some pkey) bytes
-    | Input.Raw { data } ->
-      D.deserialize None data
+      let bytes  = Crypto.sign_open pkey data in
+      let buffer =
+        let b = Common.create_buf (Bytes.length bytes) in
+        Common.blit_bytes_buf bytes b ~len:(Bytes.length bytes);
+        b
+      in
+      let reader = D.deserializer (Some pkey) in
+      reader.read buffer ~pos_ref:(ref 0)
+    | Input.Raw { data = bytes } ->
+      let buffer =
+        let b = Common.create_buf (Bytes.length bytes) in
+        Common.blit_bytes_buf bytes b ~len:(Bytes.length bytes);
+        b
+      in
+      let reader = D.deserializer None in
+      reader.read buffer ~pos_ref:(ref 0)
 
-  let post output =
+  let post (output : P.output) =
+    let buf   = Utils.bin_dump S.serializer output.msg in
+    let len   = Common.buf_len buf in
+    let bytes = Bytes.create len in
+    Common.blit_buf_bytes buf bytes ~len;
     {
       output with
-      Address.msg = S.serialize output.Address.msg
+      Address.msg = bytes
     }
 
   let thread =

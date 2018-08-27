@@ -301,11 +301,7 @@ struct
   type t = L.t output_data
   [@@deriving bin_io]
 
-  let serialize x =
-    let buff = Utils.bin_dump bin_writer_t x in
-    let bytes = Bytes.create (Common.buf_len buff) in
-    Common.blit_buf_bytes buff bytes ~len:(Common.buf_len buff);
-    bytes
+  let serializer = bin_writer_t
     
 end
 
@@ -320,7 +316,7 @@ struct
   type t = (L.t, NetProcess.Input.t) input
   [@@deriving bin_io]
 
-  let deserialize pubkey x =
+  let deserializer pubkey =
     match pubkey with
     | None ->
       failwith @@ "huxiang/replica/deserializer/deserialize: "^
@@ -331,13 +327,22 @@ struct
             Crypto.Public.equal owner key
           ) C.addresses
       in
-      let buf = Types.HuxiangBytes.to_buf x in
       if originator_in_clique then
-        bin_read_t buf ~pos_ref:(ref 0)
+        bin_reader_t
       else
-        Input (NetProcess.Input.bin_read_t buf ~pos_ref:(ref 0))
+        let read : t Bin_prot.Read.reader = fun buf ~pos_ref ->
+          Input (NetProcess.Input.bin_read_t buf ~pos_ref)
+        in
+        let vtag_read = fun buf ~pos_ref tag ->
+          Input (NetProcess.Input.bin_reader_t.vtag_read buf ~pos_ref tag)
+        in
+        {
+          Bin_prot.Type_class.read; 
+          vtag_read
+        }
+
 end
-  
+ 
 
 module Make(P : NetProcess.S)(S : Process.Scheduler)(L : Leadership.S)(C : Clique) =
   NetProcess.Compile
