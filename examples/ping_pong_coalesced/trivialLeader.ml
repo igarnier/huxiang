@@ -1,5 +1,5 @@
 type t = ()
-[@@deriving yojson,show,eq]
+[@@deriving show,eq]
 
 let hash () =
   Sodium.Hash.Bytes.digest (Bytes.of_string "")

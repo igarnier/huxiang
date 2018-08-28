@@ -4,58 +4,44 @@ open Huxiang
 let face =
   let open Process in
   [|
-    ({
+    {
       Address.owner = Directory.ping_node.owner;
       pname = Processes.PingPongForPing.name
-    }, Address.Root);
-    ({
+    };
+    {
       Address.owner = Directory.pong_node.owner;
       pname = Processes.PingPongForPong.name
-    }, Address.Root)
+    }
   |]
   
+
+
+module O =
+struct
+
+  type t = [`leader of unit]
+  [@@deriving eq, show, bin_io]
+
+
+end
 
 module Oracle =
 struct
 
-  module I =
-    struct
-      
-      type t = unit
-      [@@deriving yojson,eq,show]
-
-      let deserialize _ _ = ()
-
-      let serialize _ =
-        failwith "useless"
-
-    end
-
-  module O =
-  struct
-    
-    type t = [`leader of unit]
-    [@@deriving eq,show]
-
-      let deserialize _ _ =
-        failwith "useless"
-
-    let serialize v =
-      Bytes.to_string (Marshal.to_bytes v [])
-
-  end
+  type input  = unit
+  type output = O.t
 
   type state = unit
 
   let show_state i = "()"
 
-  let name = Process.Name.atom "oracle"
+  let name = Name.atom "oracle"
     
   let rec main_loop state =
     Process.without_input
       (Lwt_unix.sleep 3.0;%lwt
        let dst = if Random.bool () then face.(0) else face.(1) in
-       let output = Process.(`leader () @. dst) in
+       let output = Address.(`leader () @. dst) in
        let dst_name = Process.Address.show (fst dst) in
        Lwt_log.info_f "elected as leader: %s" dst_name;%lwt
        Process.continue_with ~output state main_loop)
