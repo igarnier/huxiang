@@ -23,7 +23,7 @@ struct
     (** Hash of the proof of leadership. Since proofs of leadership points
         to the hash of their ancestor, this acts indirectly as a pointer
         to the previous node. *)
-    hash  : Types.hash;
+    hash  : Crypto.Hash.t;
 
     (** Direct pointer to the previous node. *)
     prev  : node option;
@@ -37,20 +37,20 @@ struct
     struct
       include Map.Make(Bytes)
 
-      let add (hash : Types.hash) v table =
-        add (hash :> Bytes.t) v table
+      let add (hash : Crypto.Hash.t) v table =
+        add (Crypto.Hash.to_bytes hash) v table
 
-      let find (hash : Types.hash) table =
-        find (hash :> Bytes.t) table
+      let find (hash : Crypto.Hash.t) table =
+        find (Crypto.Hash.to_bytes hash) table
           
-      let mem (hash : Types.hash) table =
-        mem (hash :> Bytes.t) table
+      let mem (hash : Crypto.Hash.t) table =
+        mem (Crypto.Hash.to_bytes hash) table
 
-      let remove (hash : Types.hash) table =
-        remove (hash :> Bytes.t) table
+      let remove (hash : Crypto.Hash.t) table =
+        remove (Crypto.Hash.to_bytes hash) table
 
-      let update (k : Types.hash) (k' : Types.hash) (v : 'a) table =
-        update (k :> Bytes.t) (k' :> Bytes.t) v table
+      let update (k : Crypto.Hash.t) (k' : Crypto.Hash.t) (v : 'a) table =
+        update (Crypto.Hash.to_bytes k) (Crypto.Hash.to_bytes k') v table
     end
 
   (** [nodes] contains the set of /all/ received data.
@@ -63,8 +63,8 @@ struct
     *)
   type t = {
     nodes   : node Table.t;
-    pending : Types.hash Table.t;
-    head    : Types.hash;
+    pending : Crypto.Hash.t Table.t;
+    head    : Crypto.Hash.t;
   }
 
   (** When adding a data together with a proof of leadership, the result is
@@ -130,7 +130,7 @@ struct
     else
       let prev_hash = L.prev proof in
       let node = { data = []; proof; hash; prev = None; next = None } in
-      if Types.equal_hash prev_hash table.head then
+      if Crypto.Hash.equal prev_hash table.head then
         let nodes = Table.add node.hash node table.nodes in
         let table = { table with nodes } in
         extend_chain node table
@@ -171,12 +171,12 @@ struct
       next  = None
     } in
     {
-      nodes   = Table.singleton (genesis.hash :> Bytes.t) genesis;
+      nodes   = Table.singleton (Crypto.Hash.to_bytes genesis.hash) genesis;
       pending = Table.empty;
       head    = genesis.hash
     }
 
-  (* let get_prev_hash table (hash : Types.hash) =
+  (* let get_prev_hash table (hash : Crypto.Hash.t) =
    *   let node = Table.find hash table.nodes in
    *   L.prev node.proof *)
 

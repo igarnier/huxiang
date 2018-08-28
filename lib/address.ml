@@ -1,9 +1,11 @@
+open Bin_prot
+
 type t =
   {
     owner : Crypto.Public.t;
     pname : Name.t
   }
-[@@deriving show, eq]
+[@@deriving show, eq, bin_io]
 
 type 'a multi_dest = {
   dests : t list;
@@ -11,8 +13,18 @@ type 'a multi_dest = {
 }
 [@@deriving show, eq]
 
+module type Clique =
+sig
+  val addresses : t list
+end
+
 let (@.) msg dest =
   { msg; dests = [dest] }
 
 let (@+) msg dests =
   { msg; dests }
+
+let hash x =
+  let buf  = Utils.bin_dump bin_writer_t x in
+  Crypto.Hash.digest_buf buf
+

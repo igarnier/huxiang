@@ -1,7 +1,7 @@
 module type Params =
 sig
+  include Address.Clique
   val processes : (module NetProcess.S) list
-  val addresses : Address.t list
   val owner     : Crypto.Public.t
 end
 

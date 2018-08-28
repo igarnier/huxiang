@@ -17,11 +17,9 @@ sig
   (** A proof of leadership should be hashable and equalable, with all the usal 
       robustness assumptions on the hashing functions. We must also be able
       to serialize it. *)
-  include Types.Hashable with type t := t
+  include Crypto.Hashable with type t := t
 
   include Types.Equalable with type t := t
-
-  (* include Jsonable with type t := t *)
 
   include Types.Showable with type t := t
 
@@ -29,15 +27,14 @@ sig
 
   (** To prevent reuse of proofs of leadership, we make each proof point
       to the hash of the previous one. *)
-  val prev : t -> Types.hash
+  val prev : t -> Crypto.Hash.t
 
   (** The genesis "proof", i.e. the root of the tree of proofs. *)
   val root : t
 
-  (** Validity ("appendability") of a proof depends on the satisfaction of a
-      predicate which depends on some hash (typically, the hash of the state 
-      of some  process). *)
-  val check : t -> t -> bool
+  (** [extend proof k] returns [None] if the player with public key [k]
+      has no right to extend [proof], or [Some proof] in the other case. *)
+  val extend : t -> Crypto.Secret.t -> Crypto.Public.t -> t option
 
   (** Each proof of leadership also points to the public key of the leader. *)
   val leader : t -> Crypto.Public.t

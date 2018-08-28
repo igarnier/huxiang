@@ -9,9 +9,15 @@ type 'a multi_dest = {
   msg   : 'a
 }
 
+module type Clique =
+sig
+  val addresses : t list
+end
+
 include Types.Showable with type t := t
 include Types.Equalable with type t := t
-
+include Crypto.Hashable with type t := t
+include Bin_prot.Binable.S with type t := t
 
 val equal_multi_dest : ('a -> 'a -> bool) ->
   'a multi_dest -> 'a multi_dest -> bool

@@ -1,11 +1,6 @@
 open Types
 open Bin_prot.Std
 
-module type Clique =
-sig
-  val addresses : Address.t list
-end
-
 type notification_kind =
   | Transition of { t_index : int }
   | NoTransition
@@ -27,7 +22,7 @@ type 'l output_data =
   | Output of Types.HuxiangBytes.t
 [@@deriving bin_io]
 
-module Replica(P : NetProcess.S)(S : Process.Scheduler)(L : Leadership.S)(C : Clique) :
+module Replica(P : NetProcess.S)(S : Process.Scheduler)(L : Leadership.S)(C : Address.Clique) :
   Process.S with type input = (L.t, P.input) input
              and type output = L.t output_data Address.multi_dest
 =
@@ -58,7 +53,7 @@ struct
       fbuff   : buffer; (* future buffer *)
       pbuff   : buffer; (* present buffer *)
       chain   : Chain.t;
-      current : Types.hash
+      current : Crypto.Hash.t
     }
 
   let show_state _ = "opaque"
@@ -88,14 +83,6 @@ struct
 
   let validate_leadership state proof =
     { state with chain = Chain.insert_proof proof state.chain }
-
-  (* TODO:
-     I: extend trace or add to waiting pool
-     proof needs to point to (previous proof + Nil)
-     if (previous proof) top of trace -> extend trace and check whether waiting notifs can be applied
-     else if (previous proof) points in the past -> check transition name matches (here, since we have det. machines, nothing to check ...)
-     else if (previous proof) not to be found: add to waiting pool
-  *)
 
   let play_transition state transition =
     match transition with
@@ -305,7 +292,7 @@ struct
     
 end
 
-module Deserializer(L : Leadership.S)(C : Clique) :
+module Deserializer(L : Leadership.S)(C : Address.Clique) :
   NetProcess.Deserializer 
   with type t = (L.t, NetProcess.Input.t) input
 =
@@ -344,7 +331,7 @@ struct
 end
  
 
-module Make(P : NetProcess.S)(S : Process.Scheduler)(L : Leadership.S)(C : Clique) =
+module Make(P : NetProcess.S)(S : Process.Scheduler)(L : Leadership.S)(C : Address.Clique) =
 struct
   module Dsz = Deserializer(L)(C)
 

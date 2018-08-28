@@ -114,3 +114,29 @@ let sign skey bytes =
 
 let sign_open pkey bytes =
   S.Bytes.sign_open pkey bytes
+
+
+module Hash =
+struct
+
+  type t = Types.HuxiangBytes.t
+  [@@deriving show, eq, ord, bin_io]
+
+  let digest_bytes b =
+    let hash = Sodium.Hash.Bytes.digest b in
+    Sodium.Hash.Bytes.of_hash hash
+
+  let digest_buf b =
+    let hash = Sodium.Hash.Bigbytes.digest b in
+    Sodium.Hash.Bytes.of_hash hash
+
+  let to_bytes hash = (hash :> Bytes.t)
+  let of_bytes hash = (hash :> t)
+
+end
+
+module type Hashable =
+sig
+  type t
+  val hash : t -> Hash.t
+end
