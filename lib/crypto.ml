@@ -20,7 +20,7 @@ struct
   let pp fmt key =
     let bytes = S.Bytes.of_public_key key in
     Format.pp_print_string fmt (Bytes.to_string bytes)
-  
+
   let show key =
     let bytes = S.Bytes.of_public_key key in
     Bytes.to_string bytes
@@ -36,15 +36,15 @@ struct
   open Bin_prot
 
   let bin_size_t s =
-    Bytes.length (to_bytes s)
+    Types.HuxiangBytes.bin_size_t (to_bytes s)
 
   let bin_write_t : t Bin_prot.Write.writer =
     fun buf ~pos data ->
-    Std.bin_write_bytes buf ~pos (to_bytes data)
+      Std.bin_write_bytes buf ~pos (to_bytes data)
 
   let bin_read_t : t Bin_prot.Read.reader =
     fun buf ~pos_ref ->
-    of_bytes (Std.bin_read_bytes buf ~pos_ref)
+      of_bytes (Std.bin_read_bytes buf ~pos_ref)
 
   let bin_writer_t =
     {
@@ -61,7 +61,7 @@ struct
     }
 
   let bin_shape_t = Bin_prot.Shape.bin_shape_bytes
-                      
+
   let bin_t = 
     { Bin_prot.Type_class.shape = bin_shape_t;
       writer = bin_writer_t;
@@ -81,7 +81,7 @@ struct
   let pp fmt key =
     let bytes = S.Bytes.of_secret_key key in
     Format.pp_print_string fmt (Bytes.to_string bytes)
-  
+
   let show key =
     let bytes = S.Bytes.of_secret_key key in
     Bytes.to_string bytes
@@ -115,6 +115,12 @@ let seeded_key_pair seed =
   let seed   = S.Bytes.to_seed digest in
   S.seed_keypair seed
 
+let key_pair_to_cred (secret_key, public_key) =
+  (module struct
+    let public_key = public_key
+    let secret_key = secret_key      
+  end : Credentials)
+
 let sign skey bytes =
   S.Bytes.sign skey bytes
 
@@ -146,3 +152,14 @@ sig
   type t
   val hash : t -> Hash.t
 end
+
+
+(* -------------------------------------------------------------------------- *)
+(* Tests *)
+
+let%test _ =
+  let (sk, pk) = random_key_pair () in
+  let raw      = Bytes.of_string "message" in
+  let signed   = sign sk raw in
+  let opened   = sign_open pk signed in
+  Bytes.equal raw opened

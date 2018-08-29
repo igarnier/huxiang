@@ -27,6 +27,8 @@ end
 val random_key_pair : unit -> Secret.t * Public.t
 val seeded_key_pair : string -> Secret.t * Public.t
 
+val key_pair_to_cred : Secret.t * Public.t -> (module Credentials)
+
 val sign : Secret.t -> Bytes.t -> Bytes.t
 val sign_open : Public.t -> Bytes.t -> Bytes.t
 

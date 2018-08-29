@@ -48,7 +48,7 @@ struct
   }
 
   let hash x =
-    let buf  = Utils.bin_dump bin_writer_t x in
+    let buf = Utils.bin_dump bin_writer_t x in
     Crypto.Hash.digest_buf buf
 
   let check proof =
@@ -81,3 +81,36 @@ struct
     addresses.(current).Address.owner
   
 end
+
+(* -------------------------------------------------------------------------- *)
+(* Tests *)
+
+let%test_unit "Leadersip/hash" =
+  let module Owner = (val Crypto.(key_pair_to_cred (random_key_pair ()))) in
+  let addr = Address.({ owner = Owner.public_key; pname = Name.atom "address1" }) in
+  let module C : Address.Clique =
+  struct
+    let addresses = [ addr ]
+  end
+  in
+  let module RR = RoundRobin(C)(Owner) in
+  ignore (RR.hash RR.root)
+
+let%test _ =
+  let module Owner1 = (val Crypto.(key_pair_to_cred (random_key_pair ()))) in
+  let module Owner2 = (val Crypto.(key_pair_to_cred (random_key_pair ()))) in
+  let addr1    = Address.{ owner = Owner1.public_key; pname = Name.atom "address1" } in
+  let addr2    = Address.{ owner = Owner2.public_key; pname = Name.atom "address2" } in
+  let module C : Address.Clique =
+  struct
+    let addresses = [ addr1; addr2 ]
+  end
+  in
+  let module RR1 = RoundRobin(C)(Owner1) in
+  match RR1.extend RR1.root with
+  | None ->
+    false
+  | Some extension ->
+    (match RR1.extend extension with
+     | None -> true
+     | _    -> false)

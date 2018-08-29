@@ -36,15 +36,18 @@ struct
   let __bin_read_t__ = Std.__bin_read_bytes__
 
   let to_buf bytes =
-    let buf = Common.create_buf (length bytes) in
-    Common.blit_bytes_buf bytes buf ~len:(length bytes);
-    buf
+    Bin_prot.Utils.bin_dump bin_writer_t bytes
 
   let from_buf buf =
-    let bytes = Bytes.create (Common.buf_len buf) in
-    Common.blit_buf_bytes buf bytes ~len:(Common.buf_len buf);
-    bytes
+    bin_read_t buf ~pos_ref:(ref 0)
 
 end
 
 (* -------------------------------------------------------------------------- *)
+(* tests *)
+
+let%test _ =
+  let bytes  = Bytes.of_string "test string" in
+  let buf    = HuxiangBytes.to_buf bytes in
+  let bytes' = HuxiangBytes.from_buf buf in
+  HuxiangBytes.equal bytes bytes'
