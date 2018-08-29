@@ -15,7 +15,6 @@ depends: [
   "lwt"                 {>= "2.7.0"}
   "lwt_ppx"
   "lwt_log"
-  "lwt.unix"
   "zmq"
   "zmq-lwt"
   "bin_prot"
