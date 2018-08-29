@@ -18,8 +18,8 @@ struct
 
   let frame_of_bytes bytes =
     let open NetProcess in
-    let (uid, data, route_bytes) :
-      int64 * NetProcess.Input.data * Bytes.t =
+    let (uid, data) :
+      int64 * NetProcess.Input.data =
       Marshal.from_bytes bytes 0
     in
     let frame = { Input.data } in
@@ -46,13 +46,12 @@ struct
     }
 
   let get_uid = function
-    | Msg { uid }
+    | Msg { uid; _ }
     | Ack { uid } -> uid
     
   let print_msg msg =
     match msg with
-    | Msg { msg; uid } ->
-      let open NetProcess in
+    | Msg { uid; _ } ->
       Printf.sprintf "msg(%Ld)" uid
     | Ack { uid } ->
       Printf.sprintf "ack(%Ld)" uid
@@ -174,7 +173,7 @@ struct
         write_and_get_acked (Msg { uid; msg }) socket
       ) dests
         
-  let reader_thread { ingoing; mqueue; process } =
+  let reader_thread { ingoing; mqueue; process; _ } =
     let fname = "huxiang/node/reader_thread" in
     let rec loop process =
       lwt_debug fname "loop entered";%lwt
@@ -222,7 +221,7 @@ struct
     in
     loop process
 
-  let writer_thread { routing; mqueue; skey; pkey } =
+  let writer_thread { routing; mqueue; skey; pkey; _ } =
     let fname = "huxiang/node/writer_thread" in
     let rec loop uid =
       lwt_debug fname "loop entered";%lwt

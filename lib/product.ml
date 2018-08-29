@@ -54,10 +54,10 @@ struct
 
   let show_state _ = "opaque"
 
-  let key_is_in_clique pkey =
-    List.exists (fun owner ->
-        Crypto.Public.equal owner pkey
-      ) owners
+  (* let key_is_in_clique pkey =
+   *   List.exists (fun owner ->
+   *       Crypto.Public.equal owner pkey
+   *     ) owners *)
       
   let reroute state (output : Bytes.t Address.multi_dest option) =
     match output with

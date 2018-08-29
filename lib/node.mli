@@ -1,5 +1,3 @@
-open Types
-
 module Make(P : NetProcess.S) :
 sig
 

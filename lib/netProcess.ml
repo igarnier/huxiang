@@ -17,15 +17,15 @@ type input = Input.t
 
 type output = Bytes.t Address.multi_dest
 
-let equal_data d1 d2 =
-  match d1, d2 with
-  | Input.Signed { data = data1; pkey = pk1 }, Input.Signed { data = data2; pkey = pk2 } ->
-    Bytes.equal data1 data2 &&
-    Crypto.Public.equal pk1 pk2
-  | Input.Raw { data = data1 }, Input.Raw { data = data2 } ->
-    Bytes.equal data1 data2
-  | _ ->
-    false
+(* let equal_data d1 d2 =
+ *   match d1, d2 with
+ *   | Input.Signed { data = data1; pkey = pk1 }, Input.Signed { data = data2; pkey = pk2 } ->
+ *     Bytes.equal data1 data2 &&
+ *     Crypto.Public.equal pk1 pk2
+ *   | Input.Raw { data = data1 }, Input.Raw { data = data2 } ->
+ *     Bytes.equal data1 data2
+ *   | _ ->
+ *     false *)
 
 (* let equal_input i1 i2 =
  *   equal_data i1.Input.data i2.Input.data

@@ -1,4 +1,3 @@
-open Types
 open Bin_prot.Std
 
 type notification_kind =
@@ -78,8 +77,8 @@ struct
   let put_message_in_future msg state =
     { state with fbuff = Batteries.Deque.snoc state.fbuff msg }
 
-  let put_message_in_present msg state =
-    { state with pbuff = Batteries.Deque.snoc state.pbuff msg }
+  (* let put_message_in_present msg state =
+   *   { state with pbuff = Batteries.Deque.snoc state.pbuff msg } *)
 
   let validate_leadership state proof =
     { state with chain = Chain.insert_proof proof state.chain }
@@ -174,7 +173,7 @@ struct
         let%lwt chain =
           match res with
           | Chain.Consistent chain -> Lwt.return chain
-          | Chain.Inconsistent(chain, d1, d2, proof) ->
+          | Chain.Inconsistent(_, _, _, proof) ->
             blame proof "Inconsistency detected."
         in
         let state = { state with chain } in
@@ -295,8 +294,6 @@ module Serializer(L : Leadership.S) :
 =
 struct
 
-  open Bin_prot
-  
   type t = L.t output_data
   [@@deriving bin_io]
 
@@ -310,8 +307,6 @@ module Deserializer(L : Leadership.S)(C : Address.Clique) :
 =
 struct
 
-  open Bin_prot
-  
   type t = (L.t, NetProcess.Input.t) input
   [@@deriving bin_io]
 
@@ -322,7 +317,7 @@ struct
                   "input message is not signed"
     | Some key ->
       let originator_in_clique =
-        List.exists (fun { Address.owner } ->
+        List.exists (fun { Address.owner; _ } ->
             Crypto.Public.equal owner key
           ) C.addresses
       in

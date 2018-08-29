@@ -40,11 +40,11 @@ struct
 
   let bin_write_t : t Bin_prot.Write.writer =
     fun buf ~pos data ->
-    Std.bin_write_bytes buf pos (to_bytes data)
+    Std.bin_write_bytes buf ~pos (to_bytes data)
 
   let bin_read_t : t Bin_prot.Read.reader =
     fun buf ~pos_ref ->
-    of_bytes (Std.bin_read_bytes buf pos_ref)
+    of_bytes (Std.bin_read_bytes buf ~pos_ref)
 
   let bin_writer_t =
     {

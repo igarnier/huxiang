@@ -1,5 +1,3 @@
-open Types
-
 type ('i, 'o) transition =
   | Input of ('i -> 'o)
   | NoInput of 'o
@@ -25,7 +23,7 @@ type ('s, 'i, 'o) scheduler =
   ('i, ('s, 'i, 'o) outcome Lwt.t) transition list -> int option
 
 let first_pick_scheduler = function
-  | x :: _ -> Some 0
+  | _ :: _ -> Some 0
   | _      -> None
 
 let uniform_random_scheduler = function
