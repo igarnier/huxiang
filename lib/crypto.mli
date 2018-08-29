@@ -18,6 +18,12 @@ module Public :
 
 module Secret : Key
 
+module type Credentials =
+sig
+  val public_key : Public.t
+  val secret_key : Secret.t
+end
+
 val random_key_pair : unit -> Secret.t * Public.t
 val seeded_key_pair : string -> Secret.t * Public.t
 

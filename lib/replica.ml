@@ -12,14 +12,14 @@ type notification =
 [@@deriving eq, bin_io]
 
 type ('l, 'i) input =
-  | Leader of { proof : 'l }
-  | Notification of { proof : 'l; notif : notification }
-  | Input of 'i
+  (* | Leader of { proof : 'l } *)
+  | INotification of { proof : 'l; notif : notification }
+  | IInput of 'i
 [@@deriving bin_io]
 
 type 'l output_data =
-  | Notification of { proof : 'l; notif : notification }
-  | Output of Types.HuxiangBytes.t
+  | ONotification of { proof : 'l; notif : notification }
+  | OOutput of Types.HuxiangBytes.t
 [@@deriving bin_io]
 
 module Replica(P : NetProcess.S)(S : Process.Scheduler)(L : Leadership.S)(C : Address.Clique) :
@@ -70,7 +70,7 @@ struct
     | None -> None
     | Some outp ->
       Some { outp 
-             with msg = Output outp.msg
+             with msg = OOutput outp.msg
            }
 
   let name = Name.inter P.name
@@ -150,12 +150,24 @@ struct
     Lwt.fail_with @@ msg^" Originator: "^leader_pkey
 
   let rec process state =
-    Process.with_input begin function
-      | Leader { proof } ->        
+    Process.without_input begin
+      let head = Chain.get_node state.chain state.chain.Chain.head in
+      match L.extend head.Chain.proof with
+      | None ->
+        Process.continue_with state wait_for_input
+      | Some proof ->
         let state = validate_leadership state proof in
         let node  = Chain.get_node state.chain state.current in
         Process.continue_with state (synch node.next)
-      | Notification { proof; notif } ->
+    end
+
+  and wait_for_input state =
+    Process.with_input begin function
+      (* | Leader { proof } ->        
+       *   let state = validate_leadership state proof in
+       *   let node  = Chain.get_node state.chain state.current in
+       *   Process.continue_with state (synch node.next) *)
+      | INotification { proof; notif } ->
         let state = validate_leadership state proof in
         let hash  = L.hash proof in
         let res   = Chain.add_to_existing_node notif hash state.chain in
@@ -168,7 +180,7 @@ struct
         let state = { state with chain } in
         let node  = Chain.get_node state.chain state.current in
         Process.continue_with state (synch node.next)
-      | Input i ->
+      | IInput i ->
         let state = put_message_in_future i state in
         Process.continue_with state process
     end
@@ -227,7 +239,7 @@ struct
       let fbuff = Batteries.Deque.empty in
       { state with chain; pbuff; fbuff }
     in
-    let output = broadcast (Notification { proof = node.proof; notif }) in
+    let output = broadcast (ONotification { proof = node.proof; notif }) in
     Process.continue_with ~output state (synch node.next)
 
   and notify_transition (t_index, state, output) node =
@@ -254,7 +266,7 @@ struct
              let fbuff = Batteries.Deque.empty in
              { state with chain; pbuff; fbuff }
            in
-           let output = broadcast (Notification { proof = node.proof; notif }) in
+           let output = broadcast (ONotification { proof = node.proof; notif }) in
            Process.continue_with ~output state (synch node.next)
          end
       )
@@ -318,10 +330,10 @@ struct
         bin_reader_t
       else
         let read : t Bin_prot.Read.reader = fun buf ~pos_ref ->
-          Input (NetProcess.Input.bin_read_t buf ~pos_ref)
+          IInput (NetProcess.Input.bin_read_t buf ~pos_ref)
         in
         let vtag_read = fun buf ~pos_ref tag ->
-          Input (NetProcess.Input.bin_reader_t.vtag_read buf ~pos_ref tag)
+          IInput (NetProcess.Input.bin_reader_t.vtag_read buf ~pos_ref tag)
         in
         {
           Bin_prot.Type_class.read; 

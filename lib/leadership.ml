@@ -18,16 +18,16 @@ sig
 
   val root : t
 
-  val extend : t -> Crypto.Secret.t -> Crypto.Public.t -> t option
+  val extend : t -> t option
 
   val leader : t -> Crypto.Public.t
 
 end
 
-module RoundRobin(C : Address.Clique) : S =
+module RoundRobin(Clique : Address.Clique)(Cred : Crypto.Credentials) : S =
 struct
 
-  let addresses = Array.of_list C.addresses
+  let addresses = Array.of_list Clique.addresses
 
   type t = {
     addresses : Address.t array;
@@ -61,14 +61,14 @@ struct
       with
       | Sodium.Verification_failure -> false
 
-  let extend proof skey pkey =
+  let extend proof =
     if not (check proof) then
       failwith "leadership/roundrobin/extend: invalid proof";
     let { addresses; current; _ } = proof in
     let len  = Array.length addresses in
     let next = addresses.(current + 1 mod len) in    
-    if Crypto.Public.equal next.Address.owner pkey then
-      let prev = Crypto.sign skey (Crypto.Hash.to_bytes (hash proof)) in
+    if Crypto.Public.equal next.Address.owner Cred.public_key then
+      let prev = Crypto.sign Cred.secret_key (Crypto.Hash.to_bytes (hash proof)) in
       Some {
         addresses;
         current = current + 1 mod len;

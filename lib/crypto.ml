@@ -96,6 +96,12 @@ struct
 
 end
 
+module type Credentials =
+sig
+  val public_key : Public.t
+  val secret_key : Secret.t
+end
+
 let random_key_pair () =
   S.random_keypair ()
 

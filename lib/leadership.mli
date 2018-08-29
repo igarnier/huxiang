@@ -32,9 +32,9 @@ sig
   (** The genesis "proof", i.e. the root of the tree of proofs. *)
   val root : t
 
-  (** [extend proof k] returns [None] if the player with public key [k]
-      has no right to extend [proof], or [Some proof] in the other case. *)
-  val extend : t -> Crypto.Secret.t -> Crypto.Public.t -> t option
+  (** [extend proof] returns [None] if the player has no right to extend [proof], 
+      or [Some proof] in the other case. *)
+  val extend : t -> t option
 
   (** Each proof of leadership also points to the public key of the leader. *)
   val leader : t -> Crypto.Public.t
