@@ -2,15 +2,6 @@
 
 (** Interfaces for common operations. *)
 
-type json = Yojson.Safe.json
-
-module type Jsonable =
-sig
-  type t
-  val to_yojson : t -> json
-  val of_yojson : json -> (t, string) Result.result
-end
-
 module type Equalable =
 sig
   type t

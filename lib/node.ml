@@ -2,8 +2,6 @@ open Batteries
 open Zmq
 
 module LwtSocket = Zmq_lwt.Socket
-module Json = Yojson.Safe
-
 
 module Make(P : NetProcess.S) =
 struct
