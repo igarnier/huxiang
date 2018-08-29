@@ -1,6 +1,8 @@
 language: c
 sudo: required
 before_install:
+  - sudo add-apt-repository ppa:chris-lea/libsodium -y
+  - sudo apt-get update -q
   - sudo apt-get install -y libsodium-dev libzmq3-dev m4 pkg-config
 install: wget https://raw.githubusercontent.com/ocaml/ocaml-ci-scripts/master/.travis-opam.sh
 script: bash -ex .travis-opam.sh
