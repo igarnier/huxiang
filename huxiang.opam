@@ -22,7 +22,7 @@ depends: [
   "ppx_deriving"
   "ppx_inline_test"
 ]
-available: [ ocaml-version >= "4.04.1" & < "4.07" ]
+available: [ ocaml-version >= "4.04.1" & ocaml-version < "4.07" ]
 descr: "
 A library for simple communicating state machines over TCP.
 "
