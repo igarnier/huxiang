@@ -20,6 +20,7 @@ depends: [
   "bin_prot"
   "ppx_bin_prot"
   "ppx_deriving"
+  "ppx_inline_test"
 ]
 available: [ ocaml-version >= "4.04.1" ]
 descr: "
