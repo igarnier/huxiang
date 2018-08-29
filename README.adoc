@@ -1,6 +1,8 @@
 # huxiang 互相
 A library for functorially defined communicating state machines over TCP.
 
+Build status: image:https://api.travis-ci.org/huxiang/huxiang.svg[Build status]
+
 For now, this code should certainly not be used for purposes beyond 
 experimenting. The library provides a functor `Node.Make` parameterized by a
 "process". A process specifies
