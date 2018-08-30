@@ -1,6 +1,5 @@
 open Batteries
 open Huxiang
-open Huxiang.Types
 
 module Ping =
 struct
@@ -57,7 +56,7 @@ struct
   let name = Name.atom "ping"
 
   let rec main_loop () =
-    Process.with_input (fun (I.Pong i) ->
+    Process.with_input (fun (I.Pong _) ->
         let output = Address.(O.Ping (Random.int 42) @. Directory.pong_node) in
         Process.continue_with ~output () main_loop
       )
@@ -117,35 +116,58 @@ let addresses =
     Directory.pong_node
   ]
 
+
+module EvilPingParams : Product.Params =
+struct
+  let addresses = Directory.[ping_node; pong_node]
+  let processes = [compiled_evil_ping; compiled_pong]
+  let owner     = Directory.pong_pkey
+end
+
+module PingParams : Product.Params =
+struct
+  let addresses = Directory.[ping_node; pong_node]
+  let processes = [compiled_ping; compiled_pong]
+  let owner     = Directory.pong_pkey
+end
+
+module PongParams : Product.Params =
+struct
+  include PingParams
+  let owner     = Directory.pong_pkey
+end
+
+module Scheduler : Process.Scheduler =
+struct
+  let scheduler = Process.uniform_random_scheduler
+end
+
+module Clique : Address.Clique =
+struct
+  include PingParams
+end
+  
+
+module LeadershipForPing =
+  Leadership.RoundRobin(Clique)(Directory.PingCredentials)
+
+module LeadershipForPong =
+  Leadership.RoundRobin(Clique)(Directory.PongCredentials)
+
 module PingPongForPing =
   Coalesce.Make
-    (struct
-      let processes = processes
-      let addresses = addresses
-      let owner     = Directory.ping_node.Address.owner
-    end)
-    (struct
-      let scheduler = Process.uniform_random_scheduler
-    end)
+    (PingParams)
+    (Scheduler)
+    (LeadershipForPing)
 
-module EvilPingPongForPing = 
-  Coalesce.Prod
-    (EvilPing)
-    (Pong)
-    (TrivialLeader)
-    (struct 
-      let left_id  = Directory.ping_node.owner
-      let right_id = Directory.pong_node.owner
-      let owner    = left_id
-    end)
+module EvilPingPongForPing =
+  Coalesce.Make
+    (PingParams)
+    (Scheduler)
+    (LeadershipForPing)
 
-module PingPongForPong = 
-  Coalesce.Prod
-    (Ping)
-    (Pong)
-    (TrivialLeader)
-    (struct 
-      let left_id  = Directory.ping_node.owner
-      let right_id = Directory.pong_node.owner
-      let owner    = right_id
-    end)
+module PingPongForPong =
+  Coalesce.Make
+    (PongParams)
+    (Scheduler)
+    (LeadershipForPong)

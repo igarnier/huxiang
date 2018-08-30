@@ -1,5 +1,3 @@
-open Huxiang
-
 let _ = Random.self_init ()
 
 module NetworkNode = Huxiang.Node.Make(Processes.EvilPingPongForPing)
@@ -11,9 +9,11 @@ let _ =
                         ~channel:Lwt_io.stderr
                         ~close_mode:`Keep
                         ());
-  NetworkNode.start_dynamic
+  NetworkNode.start
     ~listening:Directory.pingnode
     ~network_map:Directory.network_map
+    ~skey:Directory.ping_skey
+    ~pkey:Directory.ping_pkey
 
 
 

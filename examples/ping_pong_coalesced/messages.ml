@@ -1,7 +1,4 @@
-
 open Bin_prot
-open Huxiang
-
 open Std
 
 module PingMsg =
