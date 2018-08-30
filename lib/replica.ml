@@ -55,6 +55,9 @@ struct
       current : Crypto.Hash.t
     }
 
+  let lwt_debug fname msg =
+    Lwt_log.debug_f "%s: %s" fname msg
+
   let show_state _ = "opaque"
 
   let broadcast (msg : L.t output_data) =
@@ -136,12 +139,20 @@ struct
     match S.scheduler (List.map snd playable) with
     | None   -> Lwt.return None
     | Some i ->
-      (let index, transition = List.nth playable i in
-       match%lwt play_transition state transition with
-       | None -> 
-         Lwt.return None
-       | Some (state, output) ->
-         Lwt.return (Some (index, state, output))
+      (match Batteries.List.nth_opt playable i with
+       | None ->
+         let playable_num = List.length playable in
+         let msg = 
+           Printf.sprintf "scheduler returned transition %d/%d" i playable_num
+         in
+         Lwt.fail_with @@ "huxiang/replica/try_to_transition:" ^ msg
+       | Some (index, transition) ->
+         (match%lwt play_transition state transition with
+          | None -> 
+            Lwt.return None
+          | Some (state, output) ->
+            Lwt.return (Some (index, state, output))
+         )
       )
 
   let blame proof msg =
@@ -150,23 +161,24 @@ struct
 
   let rec process state =
     Process.without_input begin
+      lwt_debug "huxiang/replica/process" "checking whether we are leader";%lwt
       let head = Chain.get_node state.chain state.chain.Chain.head in
       match L.extend head.Chain.proof with
       | None ->
+        lwt_debug "huxiang/replica/process" "we are not leader";%lwt
         Process.continue_with state wait_for_input
       | Some proof ->
+        lwt_debug "huxiang/replica/process" "we are leader";%lwt
         let state = validate_leadership state proof in
         let node  = Chain.get_node state.chain state.current in
         Process.continue_with state (synch node.next)
     end
 
   and wait_for_input state =
-    Process.with_input begin function
-      (* | Leader { proof } ->        
-       *   let state = validate_leadership state proof in
-       *   let node  = Chain.get_node state.chain state.current in
-       *   Process.continue_with state (synch node.next) *)
+    Process.with_input begin
+      function
       | INotification { proof; notif } ->
+        lwt_debug "huxiang/replica/wait_for_input" "received notification";%lwt
         let state = validate_leadership state proof in
         let hash  = L.hash proof in
         let res   = Chain.add_to_existing_node notif hash state.chain in
@@ -180,23 +192,29 @@ struct
         let node  = Chain.get_node state.chain state.current in
         Process.continue_with state (synch node.next)
       | IInput i ->
+        lwt_debug "huxiang/replica/wait_for_input" "received external input";%lwt
         let state = put_message_in_future i state in
         Process.continue_with state process
     end
 
   and synch node state =
     Process.without_input begin
+      lwt_debug "huxiang/replica/synch" "syncing local state with chain";%lwt
       match node with
       | None ->
+        lwt_debug "huxiang/replica/synch" "syncing terminated";%lwt
         Process.continue_with state process
-      | Some node ->
+      | Some node_addr ->
+        let node  = Chain.get_node state.chain node_addr in
         let state = { state with current = node.Chain.hash } in
         (match node.data with
          | { nkind = NoTransition; inputs } :: _ ->
+           lwt_debug "huxiang/replica/synch" "syncing NoTransition";%lwt
            let pbuff = Batteries.Deque.append_list state.pbuff inputs in
            let state = { state with pbuff } in
            Process.continue_with state (synch node.next)
          | { nkind = Transition { t_index }; inputs } :: _ ->
+           lwt_debug "huxiang/replica/synch" "syncing Transition";%lwt
            (match%lwt do_transition state t_index with
             | None ->
               (* Inconsistency! *)
@@ -209,17 +227,21 @@ struct
               let state = { state with pbuff } in
               Process.continue_with ?output state (synch node.next))
          | [] ->
+           lwt_debug "huxiang/replica/synch" "trying to transition";%lwt
            (* The only way the data is empty is if we're leader. *)
            (match%lwt try_to_transition state with
             | None ->
+              lwt_debug "huxiang/replica/synch" "no transition to play, notify";%lwt
               notify_no_transition state node
             | Some result ->
+              lwt_debug "huxiang/replica/synch" "transition played, notify";%lwt
               notify_transition result node
            )
         )
     end
 
   and notify_no_transition state node =
+    lwt_debug "huxiang/replica/notify_no_transition" "notifying that no transition has been played";%lwt
     let notif  = { nkind  = NoTransition;
                    inputs = Batteries.Deque.to_list state.fbuff } in
     let hash   = L.hash node.Chain.proof in
@@ -242,6 +264,7 @@ struct
     Process.continue_with ~output state (synch node.next)
 
   and notify_transition (t_index, state, output) node =
+    lwt_debug "huxiang/replica/notify_transition" "notifying that some transition has been played";%lwt
     Process.continue_with ?output state
       (fun state -> Process.without_input begin
            let notif  = { nkind  = Transition { t_index };

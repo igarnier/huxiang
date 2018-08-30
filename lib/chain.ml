@@ -25,9 +25,9 @@ struct
     hash  : Crypto.Hash.t;
 
     (** Direct pointer to the previous node. *)
-    prev  : node option;
+    prev  : Crypto.Hash.t option;
     (** Direct pointer to the next node. *)
-    next  : node option
+    next  : Crypto.Hash.t option
   }
 
   (** [Table] is a type of map where keys are hashes, concretely encoded
@@ -66,22 +66,22 @@ struct
     | Inconsistent of t * Data.t * Data.t * L.t
 
   (* update prev/next links for nodes that are in the chain. *)
-  let relink table =
-    let rec loop table node next_node =
-      match node.prev with
-      | None ->
-        let prev_hash = L.prev node.proof in
-        let prev_node = Table.find prev_hash table.nodes in
-        let node      = { node with prev = Some prev_node; next = next_node } in
-        let nodes     = Table.modify node.hash (fun _ -> node) table.nodes in
-        (* let nodes     = Table.update node.hash node.hash node table.nodes in *)
-        let table     = { table with nodes } in
-        loop table prev_node (Some node)
-      | Some _ ->
-        table
-    in
-    let head_node = Table.find table.head table.nodes in
-    loop table head_node None
+  (* let relink table =
+   *   let rec loop table node next_node =
+   *     match node.prev with
+   *     | None ->
+   *       let prev_hash = L.prev node.proof in
+   *       let prev_node = Table.find prev_hash table.nodes in
+   *       let node      = { node with prev = Some prev_node; next = next_node } in
+   *       let nodes     = Table.modify node.hash (fun _ -> node) table.nodes in
+   *       (\* let nodes     = Table.update node.hash node.hash node table.nodes in *\)
+   *       let table     = { table with nodes } in
+   *       loop table prev_node (Some node)
+   *     | Some _ ->
+   *       table
+   *   in
+   *   let head_node = Table.find table.head table.nodes in
+   *   loop table head_node None *)
 
   let add_to_existing_node data hash table =
     let node = Table.find hash table.nodes in
@@ -124,9 +124,12 @@ struct
         table
 
   and extend_chain node table =
+    (* TODO: update previous head to point on { node where prev = previous_head } *)
     let prev_head = Table.find table.head table.nodes in
-    let new_head  = { node with prev = Some prev_head; next = None } in
+    let prev_head = { prev_head with next = Some node.hash } in
+    let new_head  = { node with prev = Some prev_head.hash; next = None } in
     let nodes     = Table.modify node.hash (fun _ -> new_head) table.nodes in
+    let nodes     = Table.modify prev_head.hash (fun _ -> prev_head) nodes in
     let table     = { table with 
                       nodes;
                       head = new_head.hash } in
@@ -161,15 +164,26 @@ struct
 
   let dump ({ pending; head; _ } as table) =
 
+    let trunc_opt = function
+      | None -> "none"
+      | Some hash -> 
+        let str = Crypto.Hash.show hash in
+        if String.length str > 5 then
+          (Batteries.String.head str 5)^"..."
+        else
+          str
+    in
+
     let print_data l =
       let items = List.map Data.show l in
       let items = List.fold_left (fun acc elt -> acc ^ ";" ^ elt) "" items in
       "[" ^ items ^ "]"
     in
-    let print_node { data; hash; _ } =
+    let print_node { data; hash; prev; next; _ } =
       let data = print_data data in
       let hash = Crypto.Hash.show hash in
-      Printf.sprintf "hash = %s, data = %s" hash data
+      Printf.sprintf "hash = %s, data = %s, prev = %s, next = %s" 
+        hash data (trunc_opt prev) (trunc_opt next)
     in
     let rec loop count node =
       let s = print_node node in
@@ -177,7 +191,7 @@ struct
       match node.prev with
       | None -> ()
       | Some prev_node ->
-        loop (count + 1) prev_node
+        loop (count + 1) (get_node table prev_node)
     in
     let head_node = get_node table head in
     Printf.printf "Current chain:\n";

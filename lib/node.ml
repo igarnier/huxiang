@@ -194,7 +194,7 @@ struct
            try%lwt transition msg with
            | exn ->
              let message = 
-               "error caught in evolve: "^(Printexc.to_string exn) 
+               "error caught in Input transition: "^(Printexc.to_string exn) 
              in
              lwt_debug fname message;%lwt
              Lwt.fail exn
@@ -207,7 +207,7 @@ struct
           try%lwt transition with
           | exn ->
              let message = 
-               "error caught in evolve: "^(Printexc.to_string exn) 
+               "error caught in NoInput transition: "^(Printexc.to_string exn)
              in
              lwt_debug fname message;%lwt
              Lwt.fail exn

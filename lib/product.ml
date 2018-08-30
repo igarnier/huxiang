@@ -14,11 +14,7 @@ struct
   type buffer = NetProcess.input Batteries.Deque.t
       
   module Map =
-    Batteries.Map.Make(struct
-      type t = Crypto.Public.t
-                 
-      let compare = Crypto.Public.compare
-    end)
+    Batteries.Map.Make(Crypto.Public)
 
   type proc_state = {
     proc   : (module NetProcess.S);
@@ -35,8 +31,8 @@ struct
     assert (List.length owners = List.length owners');
     assert (List.exists (Crypto.Public.equal P.owner) owners)
 
-  let get state pkey =
-    Map.find pkey state
+  (* let get (state : state) pkey =
+   *   Map.find pkey state *)
 
   let append_to_buffer state pkey data =
     Map.modify pkey (fun procst ->
@@ -45,12 +41,8 @@ struct
         }
       ) state
 
-  let update state pkey procst =
-    Map.update pkey pkey procst state
-
   let set_proc state pkey proc =
-    let procst = get state pkey in
-    Map.update pkey pkey { procst with proc } state
+    Map.modify pkey (fun procst -> { procst with proc }) state
 
   let show_state _ = "opaque"
 
@@ -126,7 +118,7 @@ struct
         let%lwt output, next = f hd in
         let state, output = reroute state output in
         let procst = { buffer = tl; proc = next } in
-        let state  = update state pkey procst in
+        let state  = Map.modify pkey (fun _ -> procst) state in
         Process.continue_with ?output state process
     end
 
