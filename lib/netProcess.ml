@@ -4,16 +4,19 @@ module Input =
 struct
 
   type t = { data : data }
-  [@@deriving bin_io, eq]
+  [@@deriving bin_io, eq, show]
   
   and data =
     | Signed of { data : Types.HuxiangBytes.t; pkey : Crypto.Public.t }
     | Raw of { data : Types.HuxiangBytes.t }
-  [@@deriving bin_io, eq]
+  [@@deriving bin_io, eq, show]
+
+let _ = show_data
 
 end
 
 type input = Input.t
+[@@deriving show]
 
 type output = Bytes.t Address.multi_dest
 

@@ -1,6 +1,5 @@
 module Input :
 sig
-
   type t = { data : data }
   and data =
     | Signed of { data : Types.HuxiangBytes.t; pkey : Crypto.Public.t }
@@ -8,10 +7,14 @@ sig
 
   include Bin_prot.Binable.S with type t := t
   include Types.Equalable with type t := t
+  include Types.Showable with type t := t
 end
 
 type input  = Input.t
 type output = Bytes.t Address.multi_dest
+
+val show_input : input -> string
+val pp_input : Format.formatter -> input -> unit
 
 module type S = Process.S with type input = input
                            and type output = output

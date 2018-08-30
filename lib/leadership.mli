@@ -6,8 +6,8 @@
     parameterised by an abstract proof of leadership.
 
     A proof of leadership should be specific to a state of the process:
-    it can't be reused.
-*)
+    it can't be reused. *)
+
 module type S =
 sig
 
@@ -40,3 +40,8 @@ sig
   val leader : t -> Crypto.Public.t
 
 end
+
+
+type round_robin
+
+module RoundRobin : functor (Clique : Address.Clique) (Cred : Crypto.Credentials) -> S with type t = round_robin

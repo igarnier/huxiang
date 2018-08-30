@@ -21,6 +21,7 @@ depends: [
   "ppx_bin_prot"
   "ppx_deriving"
   "ppx_inline_test"
+  "hex"
 ]
 available: [ ocaml-version >= "4.04.1" & ocaml-version < "4.07" ]
 descr: "

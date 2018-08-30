@@ -3,12 +3,12 @@ open Bin_prot.Std
 type notification_kind =
   | Transition of { t_index : int }
   | NoTransition
-[@@deriving eq, bin_io]
+[@@deriving show, eq, bin_io]
 
 type notification = 
   { nkind  : notification_kind;
     inputs : NetProcess.Input.t list }
-[@@deriving eq, bin_io]
+[@@deriving show, eq, bin_io]
 
 type ('l, 'i) input =
   (* | Leader of { proof : 'l } *)
@@ -35,7 +35,7 @@ struct
   struct
 
     type t = notification
-    [@@deriving eq]
+    [@@deriving eq, show]
 
     let consistent = equal
 

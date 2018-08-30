@@ -19,11 +19,11 @@ struct
 
   let pp fmt key =
     let bytes = S.Bytes.of_public_key key in
-    Format.pp_print_string fmt (Bytes.to_string bytes)
+    Hex.pp fmt (Hex.of_string (Bytes.to_string bytes))
 
   let show key =
     let bytes = S.Bytes.of_public_key key in
-    Bytes.to_string bytes
+    Hex.show (Hex.of_string (Bytes.to_string bytes))
 
   let equal = S.equal_public_keys
 
@@ -132,7 +132,13 @@ module Hash =
 struct
 
   type t = Types.HuxiangBytes.t
-  [@@deriving show, eq, ord, bin_io]
+  [@@deriving eq, ord, bin_io]
+
+  let pp fmt (s : t) =
+    Hex.pp fmt (Hex.of_string (Bytes.to_string s))
+
+  let show s =
+    Hex.show (Hex.of_string (Bytes.to_string s))
 
   let digest_bytes b =
     let hash = Sodium.Hash.Bytes.digest b in
@@ -152,7 +158,6 @@ sig
   type t
   val hash : t -> Hash.t
 end
-
 
 (* -------------------------------------------------------------------------- *)
 (* Tests *)

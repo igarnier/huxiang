@@ -24,27 +24,35 @@ sig
 
 end
 
-module RoundRobin(Clique : Address.Clique)(Cred : Crypto.Credentials) : S =
+type round_robin =
+  {
+    addresses : Address.t array;
+    current   : int;    
+    prev      : Crypto.Hash.t (* Hash of the previous proof signed by the current player. *)
+  }
+[@@deriving eq, show, bin_io]
+
+
+module RoundRobin(Clique : Address.Clique)(Cred : Crypto.Credentials) : S with type t = round_robin =
 struct
 
   let addresses = Array.of_list Clique.addresses
 
-  type t = {
-    addresses : Address.t array;
-    current   : int;    
-    prev      : Types.HuxiangBytes.t (* Hash of the previous proof signed by the current player. *)
-  }
-  [@@deriving eq, show, bin_io]
+  type t = round_robin
+  [@@deriving eq, bin_io]
+
+  let show = show_round_robin
+  let pp   = pp_round_robin
 
   let prev { addresses; current; prev } =
     let owner = addresses.(current).Address.owner in
-    let hash  = Crypto.sign_open owner prev in
+    let hash  = Crypto.sign_open owner (Crypto.Hash.to_bytes prev) in
     Crypto.Hash.of_bytes hash
 
   let root = {
     addresses;
     current = -1;
-    prev    = Bytes.of_string ""
+    prev    = Crypto.Hash.of_bytes (Bytes.of_string "")
   }
 
   let hash x =
@@ -57,7 +65,7 @@ struct
       true
     else
       let owner = addresses.(current).Address.owner in
-      try ignore (Crypto.sign_open owner prev); true
+      try ignore (Crypto.sign_open owner (Crypto.Hash.to_bytes prev)); true
       with
       | Sodium.Verification_failure -> false
 
@@ -66,12 +74,12 @@ struct
       failwith "leadership/roundrobin/extend: invalid proof";
     let { addresses; current; _ } = proof in
     let len  = Array.length addresses in
-    let next = addresses.(current + 1 mod len) in    
+    let next = addresses.((current + 1) mod len) in    
     if Crypto.Public.equal next.Address.owner Cred.public_key then
-      let prev = Crypto.sign Cred.secret_key (Crypto.Hash.to_bytes (hash proof)) in
+      let prev = Crypto.Hash.of_bytes (Crypto.sign Cred.secret_key (Crypto.Hash.to_bytes (hash proof))) in
       Some {
         addresses;
-        current = current + 1 mod len;
+        current = (current + 1) mod len;
         prev
       }
     else
@@ -96,7 +104,19 @@ let%test_unit "Leadersip/hash" =
   let module RR = RoundRobin(C)(Owner) in
   ignore (RR.hash RR.root)
 
-let%test _ =
+
+let%test_unit "Leadersip/hash deterministic" =
+  let module Owner = (val Crypto.(key_pair_to_cred (random_key_pair ()))) in
+  let addr = Address.({ owner = Owner.public_key; pname = Name.atom "address1" }) in
+  let module C : Address.Clique =
+  struct
+    let addresses = [ addr ]
+  end
+  in
+  let module RR = RoundRobin(C)(Owner) in
+  ignore (Crypto.Hash.equal (RR.hash RR.root) (RR.hash RR.root))
+
+let%test "Leadership/extend" =
   let module Owner1 = (val Crypto.(key_pair_to_cred (random_key_pair ()))) in
   let module Owner2 = (val Crypto.(key_pair_to_cred (random_key_pair ()))) in
   let addr1    = Address.{ owner = Owner1.public_key; pname = Name.atom "address1" } in
@@ -107,10 +127,13 @@ let%test _ =
   end
   in
   let module RR1 = RoundRobin(C)(Owner1) in
-  match RR1.extend RR1.root with
-  | None ->
+  let module RR2 = RoundRobin(C)(Owner2) in
+  match RR1.extend RR1.root, RR2.extend RR2.root with
+  | None, Some _ ->
     false
-  | Some extension ->
-    (match RR1.extend extension with
-     | None -> true
-     | _    -> false)
+  | Some extension, None ->
+    (match RR1.extend extension, RR2.extend extension with
+     | None, Some _ -> true
+     | _            -> false)
+  | _ ->
+    false

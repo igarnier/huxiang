@@ -5,7 +5,9 @@ before_install:
   - sudo apt-get update -q
   - sudo apt-get install -y libsodium-dev libzmq3-dev m4 pkg-config
 install: wget https://raw.githubusercontent.com/ocaml/ocaml-ci-scripts/master/.travis-opam.sh
-script: bash -ex .travis-opam.sh
+script: 
+  - bash -ex .travis-opam.sh
+  - dune runtest
 env:
   - OCAML_VERSION=4.05
   - OCAML_VERSION=4.06
