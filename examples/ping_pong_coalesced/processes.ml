@@ -20,6 +20,7 @@ struct
         if i = counter then
           let state  = { counter = counter + 1 } in
           let output = Address.(O.Ping state.counter @. Directory.pong_node) in
+          Lwt_log.debug_f "process Ping emitting %d\n" state.counter;%lwt
           Process.continue_with ~output state main_loop
         else
           (Lwt_io.print "ping: dead state reached";%lwt
@@ -29,7 +30,10 @@ struct
   let process state =
     let output = Address.(O.Ping 0 @. Directory.pong_node) in
     Process.without_input
-      (Process.continue_with ~output state main_loop)
+      begin
+        Lwt_log.debug_f "process Ping emitting inital output\n";%lwt
+        Process.continue_with ~output state main_loop
+      end
 
   let thread =
     {
@@ -93,6 +97,7 @@ struct
 
   let rec main_loop state =
     Process.with_input (fun (I.Ping i) ->
+        Lwt_log.debug_f "process Pong replying %d\n" i;%lwt
         let output = Address.(O.Pong i @. Directory.ping_node) in
         Process.continue_with ~output state main_loop
       )
