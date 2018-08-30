@@ -319,7 +319,7 @@ struct
 
   type t = L.t output_data
   [@@deriving bin_io]
-
+  
   let serializer = bin_writer_t
     
 end

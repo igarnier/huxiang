@@ -80,17 +80,19 @@ let compile
       match input.Input.data with
       | Input.Signed { data; pkey } ->
         let bytes  = Crypto.sign_open pkey data in
+        let len    = Bytes.length bytes in
         let buffer =
-          let b = Common.create_buf (Bytes.length bytes) in
-          Common.blit_bytes_buf bytes b ~len:(Bytes.length bytes);
+          let b = Common.create_buf (len + 1) in
+          Common.blit_bytes_buf bytes b ~len;
           b
         in
         let reader = deserializer (Some pkey) in
         reader.read buffer ~pos_ref:(ref 0)
       | Input.Raw { data = bytes } ->
+        let len    = Bytes.length bytes in
         let buffer =
-          let b = Common.create_buf (Bytes.length bytes) in
-          Common.blit_bytes_buf bytes b ~len:(Bytes.length bytes);
+          let b = Common.create_buf len in
+          Common.blit_bytes_buf bytes b ~len;
           b
         in
         let reader = deserializer None in
