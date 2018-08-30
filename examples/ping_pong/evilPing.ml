@@ -1,6 +1,5 @@
 open Batteries
 open Huxiang
-open Huxiang.Types
 
 module I = Messages.PongMsg
 module O = Messages.PingMsg
@@ -20,7 +19,7 @@ struct
   let name = Name.atom "ping"
 
   let rec main_loop () =
-    Process.with_input (fun (I.Pong i) ->
+    Process.with_input (fun (I.Pong _) ->
         let output = Address.(O.Ping (Random.int 42) @. Directory.pong_node) in
         Process.continue_with ~output () main_loop
       )

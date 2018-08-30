@@ -1,2 +1,2 @@
 all:
-	jbuilder clean; jbuilder build ping.exe pong.exe evilPing.exe
+	dune clean; dune build ping.exe pong.exe evilPing.exe

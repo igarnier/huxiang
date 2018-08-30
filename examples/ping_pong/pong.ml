@@ -1,6 +1,5 @@
 open Batteries
 open Huxiang
-open Huxiang.Types
 
 module O = Messages.PongMsg
 module I = Messages.PingMsg
