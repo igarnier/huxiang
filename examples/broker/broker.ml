@@ -1,7 +1,6 @@
 open Batteries
-open Huxiang.Types
 
-module Node = Huxiang.Node.Make(Processes.Broker)
+module Node = Huxiang.Node.Make((val Processes.compiled_broker))
 
 let _ =
   let () = Lwt_log.add_rule "*" Lwt_log.Debug in
@@ -11,6 +10,8 @@ let _ =
                         ~close_mode:`Keep
                         ());
   let serv = "tcp://127.0.0.1:5558" in
-  Node.start_dynamic
+  Node.start
     ~listening:"tcp://127.0.0.1:5557"
     ~network_map:(fun _ -> serv)
+    ~skey:Directory.BrokerCred.secret_key
+    ~pkey:Directory.BrokerCred.public_key

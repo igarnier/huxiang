@@ -1,5 +1,3 @@
-open Huxiang
-
 module NetworkNode = Huxiang.Node.Make(Processes.SB_Brok)
 
 let _ =
@@ -9,9 +7,11 @@ let _ =
                         ~channel:Lwt_io.stderr
                         ~close_mode:`Keep
                         ());
-  NetworkNode.start_dynamic
+  NetworkNode.start
     ~listening:Directory.brok
     ~network_map:Directory.network_map
+    ~skey:Directory.BrokerCred.secret_key
+    ~pkey:Directory.BrokerCred.public_key
 
 
 

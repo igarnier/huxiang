@@ -1,38 +1,28 @@
 open Huxiang
 
+
+module ClientCred = (val (Crypto.(key_pair_to_cred (seeded_key_pair "client"))))
+
 let client_node =
-  let open Process in
   {
-    Address.owner = Bytes.of_string "client_owner";
+    Address.owner = ClientCred.public_key;
     pname = Name.atom "client"
   }
 
-let service_node =
-  let open Process in
+module ServiceCred = (val (Crypto.(key_pair_to_cred (seeded_key_pair "service"))))
+
+let service_node = 
   {
-    Address.owner = Bytes.of_string "service_owner";
+    Address.owner = ServiceCred.public_key;
     pname = Name.atom "service"
   }
 
+module BrokerCred = (val (Crypto.(key_pair_to_cred (seeded_key_pair "broker"))))
+
 let broker_node =
-  let open Process in
   {
-    Address.owner = Bytes.of_string "broker_owner";
+    Address.owner = BrokerCred.public_key;
     pname = Name.atom "broker"
-  }
-
-let service_node_product =
-  let open Process in
-  {
-    Address.owner = Bytes.of_string "service_owner";
-    pname = Name.prod [service_node.pname; broker_node.pname]
-  }
-
-let broker_node_product =
-  let open Process in
-  {
-    Address.owner = Bytes.of_string "broker_owner";
-    pname = Name.prod [service_node.pname; broker_node.pname]
   }
 
 let clnt = "tcp://127.0.0.1:5555"
@@ -43,13 +33,13 @@ let brok = "tcp://127.0.0.1:5557"
    each owner has only one node, there is no ambiguity, but in general this 
    is wrong. *)
 let network_map = function
-  | { Process.Address.owner } when 
-      Types.equal_public_identity owner client_node.owner  -> clnt
-  | { Process.Address.owner } when 
-      Types.equal_public_identity owner service_node.owner -> serv
-  | { Process.Address.owner } when 
-      Types.equal_public_identity owner broker_node.owner  -> brok
+  | { Address.owner; _ } when 
+      Crypto.Public.equal owner client_node.owner  -> clnt
+  | { Address.owner; _ } when 
+      Crypto.Public.equal owner service_node.owner -> serv
+  | { Address.owner; _ } when 
+      Crypto.Public.equal owner broker_node.owner  -> brok
   | addr ->
     failwith @@ 
-    Printf.sprintf "unknown address %s" (Process.Address.show addr)
+    Printf.sprintf "unknown address %s" (Address.show addr)
 
