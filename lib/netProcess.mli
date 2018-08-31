@@ -23,8 +23,7 @@ type 's t = ('s, input, output) Process.t
 
 module type Serializer =
 sig
-  type t 
-
+  type t
   val serializer : t Bin_prot.Type_class.writer
 end
 

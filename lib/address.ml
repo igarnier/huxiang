@@ -18,6 +18,12 @@ sig
   val addresses : t list
 end
 
+module type PointedClique =
+sig
+  include Clique
+  val owner : Crypto.Public.t
+end
+
 let (@.) msg dest =
   { msg; dests = [dest] }
 

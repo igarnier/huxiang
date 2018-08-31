@@ -10,7 +10,7 @@ struct
 
   type frame = NetProcess.input
 
-  let frame_to_bytes (uid, frame) =
+  let frame_to_bytes ((uid : int64), frame) =
     let open NetProcess in
     Marshal.to_bytes (uid, frame.Input.data) []
 

@@ -11,7 +11,7 @@ struct
     | Raw of { data : Types.HuxiangBytes.t }
   [@@deriving bin_io, eq, show]
 
-let _ = show_data
+  let _ = show_data
 
 end
 
@@ -82,7 +82,7 @@ let compile
         let bytes  = Crypto.sign_open pkey data in
         let len    = Bytes.length bytes in
         let buffer =
-          let b = Common.create_buf (len + 1) in
+          let b = Common.create_buf len in
           Common.blit_bytes_buf bytes b ~len;
           b
         in

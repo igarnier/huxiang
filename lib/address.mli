@@ -14,6 +14,12 @@ sig
   val addresses : t list
 end
 
+module type PointedClique =
+sig
+  include Clique
+  val owner : Crypto.Public.t
+end
+
 include Types.Showable with type t := t
 include Types.Equalable with type t := t
 include Crypto.Hashable with type t := t

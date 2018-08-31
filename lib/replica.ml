@@ -21,7 +21,7 @@ type 'l output_data =
   | OOutput of Types.HuxiangBytes.t
 [@@deriving bin_io]
 
-module Replica(P : NetProcess.S)(S : Process.Scheduler)(L : Leadership.S)(C : Address.Clique) :
+module Replica(P : NetProcess.S)(S : Process.Scheduler)(L : Leadership.S)(C : Address.PointedClique) :
   Process.S with type input = (L.t, P.input) input
              and type output = L.t output_data Address.multi_dest
 =
@@ -58,12 +58,21 @@ struct
   let lwt_debug fname msg =
     Lwt_log.debug_f "%s: %s" fname msg
 
+  let lwt_info fname msg =
+    Lwt_log.info_f "%s: %s" fname msg
+
   let show_state _ = "opaque"
 
-  let broadcast (msg : L.t output_data) =
+  let broadcast =
     let open Address in
+    let everyone_except_me =
+      List.filter (fun { Address.owner; _ } ->
+          not (Crypto.Public.equal owner C.owner)
+        ) C.addresses
+    in
+    fun (msg : L.t output_data) ->
     {
-      dests = C.addresses;
+      dests = everyone_except_me;
       msg
     }
 
@@ -106,11 +115,9 @@ struct
 
   let do_transition state index =
     let ks  = Process.evolve state.proc in
-    let len = List.length ks in
-    if index < 0 || index >= len then
-      Lwt.return None
-    else
-      let transition = List.nth ks index in
+    match Batteries.List.nth_opt ks index with
+    | None            -> Lwt.return None
+    | Some transition ->
       match%lwt play_transition state transition with
       | None -> 
         Lwt.return None
@@ -166,9 +173,11 @@ struct
       match L.extend head.Chain.proof with
       | None ->
         lwt_debug "huxiang/replica/process" "we are not leader";%lwt
+        (* Lwt_unix.sleep 0.5;%lwt *)
         Process.continue_with state wait_for_input
       | Some proof ->
         lwt_debug "huxiang/replica/process" "we are leader";%lwt
+        (* Lwt_unix.sleep 0.5;%lwt *)
         let state = validate_leadership state proof in
         let node  = Chain.get_node state.chain state.current in
         Process.continue_with state (synch node.next)
@@ -178,7 +187,9 @@ struct
     Process.with_input begin
       function
       | INotification { proof; notif } ->
-        lwt_debug "huxiang/replica/wait_for_input" "received notification";%lwt
+        lwt_info "huxiang/replica/wait_for_input" "received notification";%lwt
+        let notif_s = show_notification notif in
+        lwt_info "huxiang/replica/wait_for_input" notif_s;%lwt
         let state = validate_leadership state proof in
         let hash  = L.hash proof in
         let res   = Chain.add_to_existing_node notif hash state.chain in
@@ -209,12 +220,18 @@ struct
         let state = { state with current = node.Chain.hash } in
         (match node.data with
          | { nkind = NoTransition; inputs } :: _ ->
-           lwt_debug "huxiang/replica/synch" "syncing NoTransition";%lwt
+           let msg = 
+             Printf.sprintf "syncing NoTransition(%d)" (List.length inputs)
+           in
+           lwt_debug "huxiang/replica/synch" msg;%lwt
            let pbuff = Batteries.Deque.append_list state.pbuff inputs in
            let state = { state with pbuff } in
            Process.continue_with state (synch node.next)
          | { nkind = Transition { t_index }; inputs } :: _ ->
-           lwt_debug "huxiang/replica/synch" "syncing Transition";%lwt
+           let msg = 
+             Printf.sprintf "syncing Transition(%d)" (List.length inputs)
+           in
+           lwt_debug "huxiang/replica/synch" msg;%lwt
            (match%lwt do_transition state t_index with
             | None ->
               (* Inconsistency! *)
@@ -241,7 +258,9 @@ struct
     end
 
   and notify_no_transition state node =
-    lwt_debug "huxiang/replica/notify_no_transition" "notifying that no transition has been played";%lwt
+    lwt_debug
+      "huxiang/replica/notify_no_transition" 
+      "notifying that no transition has been played";%lwt
     let notif  = { nkind  = NoTransition;
                    inputs = Batteries.Deque.to_list state.fbuff } in
     let hash   = L.hash node.Chain.proof in
@@ -264,7 +283,9 @@ struct
     Process.continue_with ~output state (synch node.next)
 
   and notify_transition (t_index, state, output) node =
-    lwt_debug "huxiang/replica/notify_transition" "notifying that some transition has been played";%lwt
+    lwt_debug
+      "huxiang/replica/notify_transition" 
+      "notifying that some transition has been played";%lwt
     Process.continue_with ?output state
       (fun state -> Process.without_input begin
            let notif  = { nkind  = Transition { t_index };
@@ -288,7 +309,9 @@ struct
              let fbuff = Batteries.Deque.empty in
              { state with chain; pbuff; fbuff }
            in
-           let output = broadcast (ONotification { proof = node.proof; notif }) in
+           let output = 
+             broadcast (ONotification { proof = node.proof; notif }) 
+           in
            Process.continue_with ~output state (synch node.next)
          end
       )
@@ -311,67 +334,145 @@ struct
            
 end
 
-module Serializer(L : Leadership.S) :
-  NetProcess.Serializer 
-  with type t = L.t output_data
-=
+(* module Serializer(L : Leadership.S) :
+ *   NetProcess.Serializer 
+ *   with type t = L.t output_data
+ * =
+ * struct
+ * 
+ *   type t = L.t output_data
+ *   [@@deriving bin_io]
+ *   
+ *   let serializer = bin_writer_t
+ *     
+ * end *)
+
+(* module Deserializer(L : Leadership.S)(C : Address.Clique) :
+ *   NetProcess.Deserializer 
+ *   with type t = (L.t, NetProcess.Input.t) input
+ * =
+ * struct
+ * 
+ *   type t = (L.t, NetProcess.Input.t) input
+ *   [@@deriving bin_io]
+ * 
+ *   let deserializer pubkey =
+ *     match pubkey with
+ *     | None ->
+ *       failwith @@ "huxiang/replica/deserializer/deserialize: "^
+ *                   "input message is not signed"
+ *     | Some key ->
+ *       let originator_in_clique =
+ *         List.exists (fun { Address.owner; _ } ->
+ *             Crypto.Public.equal owner key
+ *           ) C.addresses
+ *       in
+ *       if originator_in_clique then
+ *         bin_reader_t
+ *       else
+ *         let read : t Bin_prot.Read.reader = fun buf ~pos_ref ->
+ *           (\* TODO: error here : these messages don't need to be
+ *              deserialized at all, but this requires modifications
+ *              to NetProcess. What we need to do, in this branch,
+ *              is short-circuit deserialization.
+ *              We might need GADTs in deserialization to encode this. 
+ *              Or we might have an ad-hoc compilation for Replica,
+ *              perhaps cleaner.
+ *           *\)
+ *           IInput (NetProcess.Input.bin_read_t buf ~pos_ref)
+ *         in
+ *         let vtag_read = fun buf ~pos_ref tag ->
+ *           IInput (NetProcess.Input.bin_reader_t.vtag_read buf ~pos_ref tag)
+ *         in
+ *         {
+ *           Bin_prot.Type_class.read; 
+ *           vtag_read
+ *         }
+ * 
+ * end *)
+ 
+
+module Make(P : NetProcess.S)(S : Process.Scheduler)(L : Leadership.S)(C : Address.Clique)(Cred : Crypto.Credentials) =
 struct
+  (* module Dsz = Deserializer(L)(C)
+   * 
+   * module Sz  = Serializer(L) *)
 
-  type t = L.t output_data
-  [@@deriving bin_io]
-  
-  let serializer = bin_writer_t
-    
-end
+  module PClique : Address.PointedClique =
+  struct
+    include C
+    let owner = Cred.public_key
+  end
 
-module Deserializer(L : Leadership.S)(C : Address.Clique) :
-  NetProcess.Deserializer 
-  with type t = (L.t, NetProcess.Input.t) input
-=
-struct
 
-  type t = (L.t, NetProcess.Input.t) input
-  [@@deriving bin_io]
+  module Rep = Replica(P)(S)(L)(PClique)
 
-  let deserializer pubkey =
-    match pubkey with
-    | None ->
-      failwith @@ "huxiang/replica/deserializer/deserialize: "^
-                  "input message is not signed"
-    | Some key ->
+  open Bin_prot
+
+  module I =
+  struct
+    type t = (L.t, NetProcess.Input.t) input
+    [@@deriving bin_io]
+  end
+
+  module O =
+  struct
+    type t = L.t output_data
+    [@@deriving bin_io]
+  end
+
+  type input  = NetProcess.input
+  type output = NetProcess.output
+
+  type state = Rep.state
+
+  let show_state = Rep.show_state
+
+  let name = Rep.name
+
+  let re_sign { NetProcess.Input.data } =
+    match data with
+    | NetProcess.Input.Raw _ ->
+      failwith "huxiang/replica/make/re_sign: input message not signed"
+    | NetProcess.Input.Signed { data; pkey } ->
+      let data = Crypto.sign_open pkey data in
+      let data = Crypto.sign Cred.secret_key data in
+      NetProcess.Input.{ data = Signed { data; pkey = Cred.public_key } }
+
+  let pre (input : NetProcess.Input.t) =
+    match input.NetProcess.Input.data with
+    | NetProcess.Input.Signed { data; pkey } ->
       let originator_in_clique =
         List.exists (fun { Address.owner; _ } ->
-            Crypto.Public.equal owner key
+            Crypto.Public.equal owner pkey
           ) C.addresses
       in
       if originator_in_clique then
-        bin_reader_t
+        let reader = I.bin_reader_t in
+        let bytes  = Crypto.sign_open pkey data in
+        let len    = Bytes.length bytes in
+        let buffer =
+          let b = Common.create_buf len in
+          Common.blit_bytes_buf bytes b ~len;
+          b
+        in
+        reader.read buffer ~pos_ref:(ref 0)
       else
-        let read : t Bin_prot.Read.reader = fun buf ~pos_ref ->
-          IInput (NetProcess.Input.bin_read_t buf ~pos_ref)
-        in
-        let vtag_read = fun buf ~pos_ref tag ->
-          IInput (NetProcess.Input.bin_reader_t.vtag_read buf ~pos_ref tag)
-        in
-        {
-          Bin_prot.Type_class.read; 
-          vtag_read
-        }
+        IInput (re_sign input)
+    | NetProcess.Input.Raw _ ->
+      failwith @@ "huxiang/replica/make/pre: "^
+                  "input message is not signed"
 
-end
- 
+    let post (output : Rep.output) =
+      let buf   = Utils.bin_dump O.bin_writer_t output.msg in
+      let len   = Common.buf_len buf in
+      let bytes = Bytes.create len in
+      Common.blit_buf_bytes buf bytes ~len;
+      {
+        output with
+        Address.msg = bytes
+      }
 
-module Make(P : NetProcess.S)(S : Process.Scheduler)(L : Leadership.S)(C : Address.Clique) =
-struct
-  module Dsz = Deserializer(L)(C)
-
-  module Sz  = Serializer(L)
-
-  module Rep = Replica(P)(S)(L)(C)
-
-  let result = NetProcess.compile Dsz.deserializer Sz.serializer (module Rep)
-
-  module Outcome = (val result)
-
-  include Outcome
+    let thread =
+      Process.(postcompose (precompose Rep.thread pre) post)
 end

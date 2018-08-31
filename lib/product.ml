@@ -1,8 +1,7 @@
 module type Params =
 sig
-  include Address.Clique
+  include Address.PointedClique
   val processes : (module NetProcess.S) list
-  val owner     : Crypto.Public.t
 end
 
 module Make(P : Params) : NetProcess.S =
@@ -79,9 +78,13 @@ struct
 
   let rec process state =
     let add_input =
-      Process.with_input_plain (fun external_input ->
-          let state = append_to_buffer state P.owner external_input in
-          Process.continue_with state process
+      Process.with_input_plain (fun ({ NetProcess.Input.data } as external_input) ->
+          match data with
+          | NetProcess.Input.Raw _ ->
+            Lwt.fail_with "huxiang/product/process: unsigned external input, error"
+          | NetProcess.Input.Signed { pkey; _ } ->
+            let state = append_to_buffer state pkey external_input in
+            Process.continue_with state process
         )
     and playable_transition =
       Map.fold (fun pkey { buffer; proc } acc ->
