@@ -1,15 +1,17 @@
 open Huxiang
-open Types
 
-module Client : Process.S =
+module Client =
 struct
 
   module I = Messages.Nothing
   module O = Messages.ClientToBroker
 
+  type input  = I.t
+  type output = O.t Address.multi_dest
+
   type state = { money : int } [@@deriving show]
 
-  let name = Process.Name.atom "client"
+  let name = Name.atom "client"
 
   let rec main_loop state =
     Process.without_input
@@ -17,7 +19,7 @@ struct
        Lwt_io.printf "money left: %d\n" state.money;%lwt
        if state.money > 0 then
          let state  = { money = state.money - 1 } in
-         let output = Process.(O.Payement 1 @ Directory.broker_node) in
+         let output = Address.(O.Payement 1 @. Directory.broker_node) in
          Process.continue_with ~output state main_loop
        else
          Process.stop state
@@ -31,84 +33,21 @@ struct
 
 end
 
-module ClientAfterProduct : Process.S =
+let compiled_client :> (module NetProcess.S) = 
+  NetProcess.compile (fun _ -> Client.I.bin_reader_t) Client.O.bin_writer_t (module Client)
+
+module Service =
 struct
 
-  module I = Messages.Nothing
-  module O = Messages.ClientToBroker
+  module I = Messages.BrokerToService
+  module O = Messages.ServiceToMother
+
+  type input  = I.t
+  type output = O.t Address.multi_dest
 
   type state = { money : int } [@@deriving show]
 
-  let name = Process.Name.atom "client"
-
-  let rec main_loop state =
-    Process.without_input
-      (Lwt_unix.sleep 1.0;%lwt
-       Lwt_io.printf "client: money left: %d\n" state.money;%lwt
-       if state.money > 0 then
-         let state  = { money = state.money - 1 } in
-         let output = Process.(
-             O.Payement 1 @+
-             [ (Directory.broker_node_product, 
-                Directory.broker_node.pname --> Root);
-               (Directory.service_node_product, 
-                Directory.broker_node.pname --> Root) ]
-           )
-         in
-         Process.continue_with ~output state main_loop
-       else
-         Process.stop state
-      )
-
-  let thread =
-    {
-      Process.move = main_loop;
-      state = { money = 1003 }
-    }
-
-end
-
-module Service : Huxiang.Process.S =
-struct
-  module I =
-  struct
-    type t = Messages.broker_to_service
-    [@@deriving eq, yojson, show]
-
-    let serialize x =
-      Yojson.Safe.to_string (to_yojson x)
-
-    let deserialize s pth =    
-      match pth with
-      | Process.Address.Root ->
-        (match of_yojson (Yojson.Safe.from_string s) with
-         | Ok x -> x
-         | Error s -> failwith s)
-      | _ ->
-        failwith "pingmsg/deserialize: wrong path"
-  end
-
-  module O =
-  struct
-    type t = Messages.service_to_mother
-    [@@deriving eq, yojson, show]
-
-    let serialize x =
-      Yojson.Safe.to_string (to_yojson x)
-
-    let deserialize s pth =    
-      match pth with
-      | Process.Address.Root ->
-        (match of_yojson (Yojson.Safe.from_string s) with
-         | Ok x -> x
-         | Error s -> failwith s)
-      | _ ->
-        failwith "pingmsg/deserialize: wrong path"
-  end
-
-  type state = { money : int } [@@deriving show]
-
-  let name = Process.Name.atom "service"
+  let name = Name.atom "service"
 
   let service_msg bulk state =
     Lwt_io.printf "service: got bulk payement: %d, total = %d\n" 
@@ -117,12 +56,12 @@ struct
   let rec deposit state =
     Process.without_input
       begin
-        let output = Process.(`ServiceDeposit @ Directory.service_mother_node) in
+        let output = Address.(O.Deposit @. Directory.mother_node) in
         Process.continue_with ~output state main_loop
       end
 
   and main_loop state =
-    Process.with_input (fun (`BulkPayement i) ->
+    Process.with_input (fun (I.BulkPayement i) ->
         let state = { money = state.money + i } in
         service_msg i state;%lwt
         Process.continue_with state write_to_mother
@@ -131,10 +70,9 @@ struct
   and write_to_mother state =
     Process.without_input
       begin
-        let output = Process.(`ServiceKeepAlive @ Directory.service_mother_node) in
+        let output = Address.(O.KeepAlive @. Directory.mother_node) in
         Process.continue_with ~output state main_loop
       end
-  
         
   let thread =
     {
@@ -143,32 +81,28 @@ struct
 
 end
 
-module Broker : Huxiang.Process.S =
+let compiled_service :> (module NetProcess.S) = 
+  NetProcess.compile (fun _ -> Service.I.bin_reader_t) Service.O.bin_writer_t (module Service)
+
+module Broker =
 struct
 
   module I = Messages.ClientToBroker
   module O =
   struct
-    type t = [Messages.broker_to_service | Messages.broker_to_mother]
-    [@@deriving eq, yojson, show]
-
-    let serialize x =
-      Yojson.Safe.to_string (to_yojson x)
-
-    let deserialize s pth =    
-      match pth with
-      | Process.Address.Root ->
-        (match of_yojson (Yojson.Safe.from_string s) with
-         | Ok x -> x
-         | Error s -> failwith s)
-      | _ ->
-        failwith "pingmsg/deserialize: wrong path"
+    type t = 
+      | ToService of Messages.BrokerToService.t
+      | ToMother  of Messages.BrokerToMother.t
+    [@@deriving eq, show, bin_io]
   end
+
+  type input  = I.t
+  type output = O.t Address.multi_dest
 
   type state = { personal : int; flow : int; } 
   [@@deriving show]
 
-  let name = Process.Name.atom "broker"
+  let name = Name.atom "broker"
 
   let broker_msg payement state =
     Lwt_io.printf
@@ -178,7 +112,7 @@ struct
   let rec deposit state =
     Process.without_input
       begin
-        let output = Process.(`BrokerDeposit @ Directory.broker_mother_node) in
+        let output = Address.(O.ToMother Deposit @. Directory.mother_node) in
         Process.continue_with ~output state main_loop
       end
 
@@ -192,7 +126,7 @@ struct
           let state       = { personal = state.personal + for_me;
                               flow     = 0 }
           in
-          let output = Process.(`BulkPayement for_service @ Directory.service_node) in
+          let output = Address.(O.ToService (BulkPayement for_service) @. Directory.service_node) in
           Process.continue_with ~output state write_to_mother
         else
           Process.continue_with state main_loop
@@ -201,7 +135,7 @@ struct
   and write_to_mother state =
     Process.without_input
       begin
-        let output = Process.(`BrokerKeepAlive @ Directory.broker_mother_node) in
+        let output = Address.(O.ToMother KeepAlive @. Directory.mother_node) in
         Process.continue_with ~output state main_loop
       end
 
@@ -214,24 +148,50 @@ struct
 
 end
 
+let compiled_broker :> (module NetProcess.S) = 
+  NetProcess.compile (fun _ -> Broker.I.bin_reader_t) Broker.O.bin_writer_t (module Broker)
+
+module BrokerParams : Product.Params =
+struct
+  let addresses = Directory.[service_node; broker_node]
+  let processes = [compiled_service; compiled_broker]
+  let owner     = Directory.BrokerCred.public_key
+end
+
+module ServiceParams : Product.Params =
+struct
+  include BrokerParams
+  let owner     = Directory.ServiceCred.public_key
+end
+
+
+module Scheduler : Process.Scheduler =
+struct
+  let scheduler = Process.uniform_random_scheduler
+end
+
+module Clique : Address.Clique =
+struct
+  include BrokerParams
+end
+
+module LeadershipForBroker =
+  Leadership.RoundRobin(Clique)(Directory.BrokerCred)
+
+module LeadershipForService =
+  Leadership.RoundRobin(Clique)(Directory.ServiceCred)
+
+
 module SB_Serv = 
-  Coalesce.Prod
-    (Service)
-    (Broker)
-    (TrivialLeader)
-    (struct 
-      let left_id  = Directory.service_node.owner
-      let right_id = Directory.broker_node.owner
-      let owner    = left_id
-    end)
+  Coalesce.Make
+    (ServiceParams)
+    (Scheduler)
+    (LeadershipForService)
+    (Directory.ServiceCred)
 
 module SB_Brok = 
-  Coalesce.Prod
-    (Service)
-    (Broker)
-    (TrivialLeader)
-    (struct 
-      let left_id  = Directory.service_node.owner
-      let right_id = Directory.broker_node.owner
-      let owner    = right_id
-    end)
+  Coalesce.Make
+    (BrokerParams)
+    (Scheduler)
+    (LeadershipForBroker)
+    (Directory.BrokerCred)

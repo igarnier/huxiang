@@ -1,9 +1,7 @@
 open Batteries
 
 open Ocaml_geth
-open Basic (* for Bits and Bytes *)
 open Contract
-
 
 (* --------------------------------------------------------------------- *)
 (* Some helpful functions *)
@@ -98,7 +96,6 @@ struct
     Compile.get_method ctx mname
 
   let service_keepalive =
-    let open Lwt in
     let service_keepalive_abi =
       match find_method "service_keepalive"  with
       | None -> failwith "service_keepalive method not found in solidity output"
@@ -122,7 +119,6 @@ struct
         Lwt.return (ABI.Decode.decode_events ctx.abi receipt)
 
   let broker_keepalive =
-    let open Lwt in
     let broker_keepalive_abi =
       match find_method "broker_keepalive"  with
       | None -> failwith "broker_keepalive method not found in solidity output"
@@ -146,7 +142,6 @@ struct
         Lwt.return (ABI.Decode.decode_events ctx.abi receipt)
 
   let service_deposit =
-    let open Lwt in
     let service_deposit_abi =
       match find_method "service_deposit"  with
       | None -> failwith "service_deposit method not found in solidity output"
@@ -170,7 +165,6 @@ struct
         Lwt.return (ABI.Decode.decode_events ctx.abi receipt)
 
   let broker_deposit =
-    let open Lwt in
     let broker_deposit_abi =
       match find_method "broker_deposit"  with
       | None -> failwith "broker_deposit method not found in solidity output"
@@ -205,38 +199,32 @@ struct
   
   module I =
   struct
-    type t = [Messages.broker_to_mother | Messages.service_to_mother]
-    [@@deriving eq, yojson, show]
-
-    let serialize x =
-      Yojson.Safe.to_string (to_yojson x)
-
-    let deserialize s pth =    
-      match pth with
-      | Process.Address.Root ->
-        (match of_yojson (Yojson.Safe.from_string s) with
-         | Ok x -> x
-         | Error s -> failwith s)
-      | _ ->
-        failwith "pingmsg/deserialize: wrong path"
+    type t = 
+      | FromBroker  of Messages.BrokerToMother.t
+      | FromService of Messages.ServiceToMother.t
+    [@@deriving eq, show, bin_io]
   end
+
   module O = Messages.Nothing
+
+  type input  = I.t
+  type output = O.t Address.multi_dest
 
   type state = unit [@@deriving show]
 
-  let name = Process.Name.atom "mother"
+  let name = Name.atom "mother"
 
   let rec main_loop state =
     Process.with_input (function
-        | `BrokerDeposit ->
+        | I.FromBroker Deposit ->
           Lwt.ignore_result (M.broker_deposit (Z.of_int 1000));
           Lwt_io.printf "broker: deposit successful\n";%lwt
           Process.continue_with state main_loop
-        | `ServiceDeposit ->
+        | I.FromService Deposit ->
           Lwt.ignore_result (M.service_deposit (Z.of_int 1000));
           Lwt_io.printf "service: deposit successful\n";%lwt
           Process.continue_with state main_loop
-        | `BrokerKeepAlive ->
+        | I.FromBroker KeepAlive ->
           let%lwt events = M.broker_keepalive () in
           (match events with
            | [] ->
@@ -245,21 +233,21 @@ struct
              Lwt.fail_with "mother/motherprocess/main_loop: more that one message written when calling broker_keepalive"
            | [{ event_name; event_args }] ->
              (match event_name, event_args with
-              | "ServiceTimeout", [ { desc = ABI.Int delta } ] ->
+              | "ServiceTimeout", [ { desc = ABI.Int delta; _ } ] ->
                 let s = 
                   Printf.sprintf
                     "mother/motherprocess/main_loop: service timeout (%Ld) received from mother contract" 
                     delta 
                 in
                 Lwt.fail_with s
-              | "ServiceAlive", [ { desc = ABI.Int delta } ]  ->
+              | "ServiceAlive", [ { desc = ABI.Int delta; _ } ]  ->
                 Lwt_io.printf "broker: keepalive successful (%Ld)\n" delta;%lwt
                 Process.continue_with state main_loop
               | _ ->
                 Lwt.fail_with @@ "mother/motherprocess/main_loop: unknown event "^event_name
              )
           )
-        | `ServiceKeepAlive ->
+        | I.FromService KeepAlive ->
           let%lwt events = M.service_keepalive () in
           (match events with
            | [] ->
@@ -268,14 +256,14 @@ struct
              Lwt.fail_with "mother/motherprocess/main_loop: more that one message written when calling service_keepalive"
            | [{ event_name; event_args }] ->
              (match event_name, event_args with
-              | "BrokerTimeout", [ { desc = ABI.Int delta } ] ->
+              | "BrokerTimeout", [ { desc = ABI.Int delta; _ } ] ->
                 let s = 
                   Printf.sprintf
                     "mother/motherprocess/main_loop: broker timeout (%Ld) received from mother contract" 
                     delta 
                 in
                 Lwt.fail_with s
-              | "BrokerAlive",  [ { desc = ABI.Int delta } ] ->
+              | "BrokerAlive",  [ { desc = ABI.Int delta; _ } ] ->
                 Lwt_io.printf "service: keepalive successful (%Ld)\n" delta;%lwt
                 Process.continue_with state main_loop
               | _ ->
@@ -305,15 +293,34 @@ module Mom =
     let uri     = "http://localhost:8545"
   end)
 
+open Huxiang
+
+let compiled_mom =
+  NetProcess.compile (function
+      | None ->
+        failwith "no public key"
+      | Some pkey ->
+        if Crypto.Public.equal pkey Directory.BrokerCred.public_key then
+          Utils.map_reader Messages.BrokerToMother.bin_reader_t (fun x -> Mom.I.FromBroker x)
+        else if Crypto.Public.equal pkey Directory.ServiceCred.public_key then
+          Utils.map_reader Messages.ServiceToMother.bin_reader_t (fun x -> Mom.I.FromService x)
+        else
+          failwith "unknown public key"
+    ) Messages.Nothing.bin_writer_t (module Mom)
+
+module MomCred = (val Crypto.(key_pair_to_cred (seeded_key_pair "mother")))
+
 let _ =
-  let module MomNode = Huxiang.Node.Make(Mom) in
+  let module MomNode = Huxiang.Node.Make((val compiled_mom)) in
   let () = Lwt_log.add_rule "*" Lwt_log.Debug in
   Lwt_log.default := (Lwt_log.channel
                         ~template:"[$(level)] $(message)"
                         ~channel:Lwt_io.stderr
                         ~close_mode:`Keep
                         ());
-  MomNode.start_dynamic
+  MomNode.start
     ~listening:Directory.service_mother
     ~network_map:Directory.network_map
+    ~skey:Directory.MomCred.secret_key
+    ~pkey:Directory.MomCred.public_key
 
