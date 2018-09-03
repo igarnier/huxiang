@@ -1,11 +1,10 @@
 open Bin_prot
 
-
 let map_writer (type t u) (w : t Type_class.writer) (f : u -> t) : u Type_class.writer =
   {
-    w with
-    Type_class.write = fun buf ~pos v ->
-      w.Type_class.write buf ~pos (f v)
+    Type_class.size = (fun v -> w.Type_class.size (f v));
+    Type_class.write = (fun buf ~pos v ->
+      w.Type_class.write buf ~pos (f v))
   }
 
 let map_reader (type t u) (r : t Type_class.reader) (f : t -> u) : u Type_class.reader =

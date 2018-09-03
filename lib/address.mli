@@ -1,9 +1,14 @@
+(** Nodes in the network are entirely identified by a public key and
+    a name. At deployment time (see module [Node]), a network map has
+    to be provided mapping these values to actual addresses. *)
 type t = 
   { 
     owner : Crypto.Public.t;
     pname : Name.t
   }
 
+(** Messages are often multi-cast. Values of type [multi_dest] encapsulate 
+    a message [msg] together with a list of destinations (field [dests]). *)
 type 'a multi_dest = {
   dests : t list;
   msg   : 'a
