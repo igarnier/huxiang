@@ -152,7 +152,6 @@ struct
   include PingParams
 end
   
-
 module LeadershipForPing =
   Leadership.RoundRobin(Clique)(Directory.PingCredentials)
 
@@ -164,15 +163,18 @@ module PingPongForPing =
     (PingParams)
     (Scheduler)
     (LeadershipForPing)
+    (Directory.PingCredentials)
 
 module EvilPingPongForPing =
   Coalesce.Make
     (PingParams)
     (Scheduler)
     (LeadershipForPing)
+    (Directory.PingCredentials)
 
 module PingPongForPong =
   Coalesce.Make
     (PongParams)
     (Scheduler)
     (LeadershipForPong)
+    (Directory.PongCredentials)
