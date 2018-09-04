@@ -464,15 +464,19 @@ struct
                   "input message is not signed"
 
     let post (output : Rep.output) =
-      let buf   = Utils.bin_dump O.bin_writer_t output.msg in
-      let len   = Common.buf_len buf in
-      let bytes = Bytes.create len in
-      Common.blit_buf_bytes buf bytes ~len;
-      {
-        output with
-        Address.msg = bytes
-      }
-
+      match output.msg with
+      | ONotification _ ->
+        let buf   = Utils.bin_dump O.bin_writer_t output.msg in
+        let len   = Common.buf_len buf in
+        let bytes = Bytes.create len in
+        Common.blit_buf_bytes buf bytes ~len;
+        {
+          output with
+          Address.msg = bytes
+        }
+      | OOutput bytes ->
+        { output with msg = bytes }
+        
     let thread =
       Process.(postcompose (precompose Rep.thread pre) post)
 end

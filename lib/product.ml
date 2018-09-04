@@ -50,7 +50,7 @@ struct
    *       Crypto.Public.equal owner pkey
    *     ) owners *)
       
-  let reroute state (output : Bytes.t Address.multi_dest option) =
+  let reroute emitter_pkey state (output : Bytes.t Address.multi_dest option) =
     match output with
     | None -> state, None
     | Some { Address.msg; dests } ->
@@ -73,7 +73,13 @@ struct
       | [] ->
         state, None
       | dests ->
-        state, Some { Address.msg; dests }
+        if Crypto.Public.equal emitter_pkey P.owner then
+          (* let _ = failwith @@ "emitting a message on behalf of "^(Crypto.Public.show emitter_pkey) in *)
+          state, Some { Address.msg; dests }
+        else
+          (* Outbound messages emitted by processes that don't belong to us are
+             filtered out. *)
+          state, None
 
 
   let rec process state =
@@ -107,7 +113,7 @@ struct
   and play_noinput pkey state code =
     Process.without_input_plain begin
       let%lwt output, next = code in
-      let state, output = reroute state output in
+      let state, output = reroute pkey state output in
       let state  = set_proc state pkey next in
       Process.continue_with ?output state process
     end
@@ -119,7 +125,7 @@ struct
         Lwt.fail_with "huxiang/product/play_input: empty buffer, bug found"
       | Some(hd, tl) ->
         let%lwt output, next = f hd in
-        let state, output = reroute state output in
+        let state, output = reroute pkey state output in
         let procst = { buffer = tl; proc = next } in
         let state  = Map.modify pkey (fun _ -> procst) state in
         Process.continue_with ?output state process
