@@ -30,7 +30,7 @@ module MomCred = (val Crypto.(key_pair_to_cred (seeded_key_pair "mother")))
 
 let mother_node =
   {
-    Address.owner = BrokerCred.public_key;
+    Address.owner = MomCred.public_key;
     pname = Name.atom "mother"
   }
 
@@ -41,23 +41,18 @@ let brok = "tcp://127.0.0.1:5557"
 
 (* we use the same node to serve both processes but in reality these should be
    distinct ones for security reasons. *)
-let service_mother = "tcp://127.0.0.1:5559"
-let broker_mother = "tcp://127.0.0.1:5559"
+let mother = "tcp://127.0.0.1:5559"
 
 let network_map = 
   fun ({ Address.owner; pname } as addr) ->
   if Crypto.Public.equal owner client_node.owner then
     clnt
   else if Crypto.Public.equal owner service_node.owner then
-    if Name.equal pname (Name.atom "mother") then
-      service_mother
-    else
-      serv
+    serv
   else if Crypto.Public.equal owner broker_node.owner then
-    if Name.equal pname (Name.atom "mother") then
-      broker_mother
-    else
-      brok
+    brok
+  else if Name.equal pname (Name.atom "mother") then
+    mother
   else
     failwith @@ 
     Printf.sprintf "unknown address %s" (Address.show addr)

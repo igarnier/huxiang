@@ -62,6 +62,7 @@ struct
 
   and main_loop state =
     Process.with_input (fun (I.BulkPayement i) ->
+        Lwt_unix.sleep 0.5;%lwt
         let state = { money = state.money + i } in
         service_msg i state;%lwt
         Process.continue_with state write_to_mother
@@ -118,6 +119,7 @@ struct
 
   and main_loop state =
     Process.with_input (fun (I.Payement i) ->
+        Lwt_unix.sleep 0.5;%lwt
         broker_msg i state;%lwt
         let state = { state with flow = state.flow + i } in
         if state.flow > 10 then
@@ -148,8 +150,29 @@ struct
 
 end
 
+let writer =
+  let size = function
+    | Broker.O.ToService toserv ->
+      Messages.BrokerToService.bin_writer_t.Bin_prot.Type_class.size toserv
+    | Broker.O.ToMother tomom ->
+      Messages.BrokerToMother.bin_writer_t.Bin_prot.Type_class.size tomom
+  in
+  let write buf ~pos v =
+    match v with
+    | Broker.O.ToService toserv ->
+      Messages.BrokerToService.bin_writer_t.Bin_prot.Type_class.write buf ~pos toserv
+    | Broker.O.ToMother tomom ->
+      Messages.BrokerToMother.bin_writer_t.Bin_prot.Type_class.write buf ~pos tomom
+  in
+  {
+    Bin_prot.Type_class.size; write
+  }
+
 let compiled_broker :> (module NetProcess.S) = 
-  NetProcess.compile (fun _ -> Broker.I.bin_reader_t) Broker.O.bin_writer_t (module Broker)
+  NetProcess.compile
+    (fun _ -> Broker.I.bin_reader_t) 
+    writer
+    (module Broker)
 
 module BrokerParams : Product.Params =
 struct

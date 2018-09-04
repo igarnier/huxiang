@@ -22,7 +22,7 @@ let read_secret () =
   tcsetattr stdin TCSAFLUSH term_init;
   password
 
-let input_password (account : Types.address) =
+let input_password (account : Types.Address.t) =
   Printf.printf "password for account %s: %!" (account :> string);
   let res = read_secret () in
   print_newline ();
@@ -36,9 +36,9 @@ let input_password (account : Types.address) =
 
 module type ArgSig =
 sig
-  val account : Types.address
-  val service : Types.address
-  val broker  : Types.address
+  val account : Types.Address.t
+  val service : Types.Address.t
+  val broker  : Types.Address.t
   val timeout : int64
   val uri     : string
 end
@@ -48,15 +48,27 @@ struct
 
   let _ =
     let passphrase = input_password X.account in
-    Rpc.Personal.unlock_account ~account:X.account ~uri:"http://localhost:8545" ~passphrase ~unlock_duration:3600
+    Rpc.Personal.unlock_account
+      ~account:X.account
+      ~uri:"http://localhost:8545" 
+      ~passphrase 
+      ~unlock_duration:3600
 
   let _ =
     let passphrase = input_password X.service in
-    Rpc.Personal.unlock_account ~account:X.service ~uri:"http://localhost:8545" ~passphrase ~unlock_duration:3600
+    Rpc.Personal.unlock_account
+      ~account:X.service 
+      ~uri:"http://localhost:8545" 
+      ~passphrase 
+      ~unlock_duration:3600
 
   let _ =
     let passphrase = input_password X.broker in
-    Rpc.Personal.unlock_account ~account:X.broker ~uri:"http://localhost:8545" ~passphrase ~unlock_duration:3600
+    Rpc.Personal.unlock_account
+      ~account:X.broker 
+      ~uri:"http://localhost:8545" 
+      ~passphrase 
+      ~unlock_duration:3600
 
   (* Compile solidity file using solc with the right options, parse the
      result back. This includes the binary code of the contract and its ABI. *)
@@ -65,18 +77,25 @@ struct
   (* Get the contract address on chain *)
   let deploy_receipt =
     let given_gas = Z.of_int 500000 in
+    let arguments =
+      ABI.([ address_val X.broker; 
+             address_val X.service; 
+             uint256_val X.timeout ])
+    in
     let receipt =
       Compile.deploy_rpc
         ~uri:X.uri
         ~account:X.account
         ~gas:given_gas
         ~contract:solidity_output
-        ~arguments:ABI.([ address_val X.broker; address_val X.service; uint256_val X.timeout ])
+        ~arguments
         ~value:None
     in
     if Z.equal receipt.Types.Tx.gas_used given_gas then
       failwith "mother: contract could not be deployed"
     else
+      let receipt_str = Types.Tx.show_receipt receipt in
+      Printf.printf "mother: contract deployed; receipt:\n%s\n" receipt_str;
       receipt
 
 
@@ -114,7 +133,10 @@ struct
           ~value:None
       in
       if Z.equal receipt.Types.Tx.gas_used given_gas then
-        Lwt.fail_with "service_keepalive: contract call terminated in an erroneous state"
+        let msg =
+          "service_keepalive: contract call terminated in an erroneous state"
+        in
+        Lwt.fail_with msg
       else
         Lwt.return (ABI.Decode.decode_events ctx.abi receipt)
 
@@ -137,7 +159,10 @@ struct
           ~value:None
       in
       if Z.equal receipt.Types.Tx.gas_used given_gas then
-        Lwt.fail_with "service_keepalive: contract call terminated in an erroneous state"
+        let msg =
+          "service_keepalive: contract call terminated in an erroneous state"
+        in
+        Lwt.fail_with msg
       else
         Lwt.return (ABI.Decode.decode_events ctx.abi receipt)
 
@@ -160,7 +185,10 @@ struct
           ~value:(Some value)
       in
       if Z.equal receipt.Types.Tx.gas_used given_gas then
-        Lwt.fail_with "service_deposit: contract call terminated in an erroneous state"
+        let msg =
+          "service_deposit: contract call terminated in an erroneous state"
+        in
+        Lwt.fail_with msg
       else
         Lwt.return (ABI.Decode.decode_events ctx.abi receipt)
 
@@ -183,7 +211,10 @@ struct
           ~value:(Some value)
       in
       if Z.equal receipt.Types.Tx.gas_used given_gas then
-        Lwt.fail_with "broker_deposit: contract call terminated in an erroneous state"
+        let msg =
+          "broker_deposit: contract call terminated in an erroneous state"
+        in
+        Lwt.fail_with msg
       else
         Lwt.return (ABI.Decode.decode_events ctx.abi receipt)
 
@@ -214,7 +245,11 @@ struct
 
   let name = Name.atom "mother"
 
+  let fail where msg =
+    Lwt.fail_with @@ where^ ": "^msg
+
   let rec main_loop state =
+    let fname = "mother/motherprocess/main_loop" in
     Process.with_input (function
         | I.FromBroker Deposit ->
           Lwt.ignore_result (M.broker_deposit (Z.of_int 1000));
@@ -228,46 +263,56 @@ struct
           let%lwt events = M.broker_keepalive () in
           (match events with
            | [] ->
-             Lwt.fail_with "mother/motherprocess/main_loop: no messages written when calling broker_keepalive"
+             let msg = "no messages written when calling broker_keepalive" in
+             fail fname msg
            | _ :: _ :: _ ->
-             Lwt.fail_with "mother/motherprocess/main_loop: more that one message written when calling broker_keepalive"
+             let msg =
+               "more that one message written when calling broker_keepalive"
+             in
+             fail fname msg
            | [{ event_name; event_args }] ->
              (match event_name, event_args with
               | "ServiceTimeout", [ { desc = ABI.Int delta; _ } ] ->
-                let s = 
+                let msg = 
                   Printf.sprintf
-                    "mother/motherprocess/main_loop: service timeout (%Ld) received from mother contract" 
+                    "service timeout (%Ld) received from mother contract" 
                     delta 
                 in
-                Lwt.fail_with s
+                fail fname msg
               | "ServiceAlive", [ { desc = ABI.Int delta; _ } ]  ->
                 Lwt_io.printf "broker: keepalive successful (%Ld)\n" delta;%lwt
                 Process.continue_with state main_loop
               | _ ->
-                Lwt.fail_with @@ "mother/motherprocess/main_loop: unknown event "^event_name
+                fail fname ("unknown event "^event_name)
              )
           )
         | I.FromService KeepAlive ->
           let%lwt events = M.service_keepalive () in
           (match events with
            | [] ->
-             Lwt.fail_with "mother/motherprocess/main_loop: no messages written when calling service_keepalive"
+             let msg =
+               "no messages written when calling service_keepalive"
+             in
+             fail fname msg
            | _ :: _ :: _ ->
-             Lwt.fail_with "mother/motherprocess/main_loop: more that one message written when calling service_keepalive"
+             let msg =
+               "more that one message written when calling service_keepalive"
+             in
+             fail fname msg
            | [{ event_name; event_args }] ->
              (match event_name, event_args with
               | "BrokerTimeout", [ { desc = ABI.Int delta; _ } ] ->
-                let s = 
+                let msg =
                   Printf.sprintf
-                    "mother/motherprocess/main_loop: broker timeout (%Ld) received from mother contract" 
+                    "broker timeout (%Ld) received from mother contract" 
                     delta 
                 in
-                Lwt.fail_with s
+                fail fname msg
               | "BrokerAlive",  [ { desc = ABI.Int delta; _ } ] ->
                 Lwt_io.printf "service: keepalive successful (%Ld)\n" delta;%lwt
                 Process.continue_with state main_loop
               | _ ->
-                Lwt.fail_with @@ "mother/motherprocess/main_loop: unknown event "^event_name
+                fail fname ("unknown event "^event_name)
              )
           )
       )
@@ -277,18 +322,20 @@ struct
       Process.move  = main_loop;
       Process.state = ()
     }
-
   
 end
 
-
-(* for simplicity, deploy the mother contract with the same account that plays as "service". In reality, this could
-   be e.g. a "smarthab" account, with payement done either on-chain or in fiat by the parties. *)
+(* for simplicity, deploy the mother contract with the same account that plays
+   as "service". In reality, this could be e.g. a "smarthab" account, with
+   payement done either on-chain or in fiat by the parties. *)
 module Mom =
   MotherProcess(struct 
-    let account = Types.address_from_string "0xa742250854eeabb8a4165ee5fd1f5f76c69bf053"
-    let service = Types.address_from_string "0xa742250854eeabb8a4165ee5fd1f5f76c69bf053"
-    let broker  = Types.address_from_string "0x7beb9484e091bccd84ffa9a1fda0ba59092c1f79"
+    let account = 
+      Types.Address.from_string "0xa742250854eeabb8a4165ee5fd1f5f76c69bf053"
+    let service = 
+      Types.Address.from_string "0xa742250854eeabb8a4165ee5fd1f5f76c69bf053"
+    let broker  = 
+      Types.Address.from_string "0x7beb9484e091bccd84ffa9a1fda0ba59092c1f79"
     let timeout = 10L
     let uri     = "http://localhost:8545"
   end)
@@ -301,9 +348,11 @@ let compiled_mom =
         failwith "no public key"
       | Some pkey ->
         if Crypto.Public.equal pkey Directory.BrokerCred.public_key then
-          Utils.map_reader Messages.BrokerToMother.bin_reader_t (fun x -> Mom.I.FromBroker x)
+          let inject x = Mom.I.FromBroker x in
+          Utils.map_reader Messages.BrokerToMother.bin_reader_t inject
         else if Crypto.Public.equal pkey Directory.ServiceCred.public_key then
-          Utils.map_reader Messages.ServiceToMother.bin_reader_t (fun x -> Mom.I.FromService x)
+          let inject x = Mom.I.FromService x in
+          Utils.map_reader Messages.ServiceToMother.bin_reader_t inject
         else
           failwith "unknown public key"
     ) Messages.Nothing.bin_writer_t (module Mom)
@@ -311,6 +360,7 @@ let compiled_mom =
 module MomCred = (val Crypto.(key_pair_to_cred (seeded_key_pair "mother")))
 
 let _ =
+  Ocaml_geth.Rpc.switch_debug ();
   let module MomNode = Huxiang.Node.Make((val compiled_mom)) in
   let () = Lwt_log.add_rule "*" Lwt_log.Debug in
   Lwt_log.default := (Lwt_log.channel
@@ -319,7 +369,7 @@ let _ =
                         ~close_mode:`Keep
                         ());
   MomNode.start
-    ~listening:Directory.service_mother
+    ~listening:Directory.mother
     ~network_map:Directory.network_map
     ~skey:Directory.MomCred.secret_key
     ~pkey:Directory.MomCred.public_key
