@@ -1,5 +1,3 @@
-open Bin_prot
-open Bin_prot.Std
 
 module type S =
 sig
@@ -25,11 +23,11 @@ sig
 end
 
 type round_robin =
-  {
-    addresses : Address.t array;
-    current   : int;    
-    prev      : Crypto.Hash.t (* Hash of the previous proof signed by the current player. *)
-  }
+  | Proof of {
+      (* Hash of the previous proof signed by the current player. *)
+      prev      : Crypto.Hash.t Crypto.Signed.t
+    }
+  | Genesis
 [@@deriving eq, show, bin_io]
 
 
@@ -44,49 +42,73 @@ struct
   let show = show_round_robin
   let pp   = pp_round_robin
 
-  let prev { addresses; current; prev } =
-    let owner = addresses.(current).Address.owner in
-    let hash  = Crypto.sign_open owner (Crypto.Hash.to_bytes prev) in
-    Crypto.Hash.of_bytes hash
+  let index_of_player (pkey : Crypto.Public.t) =
+    let len = Array.length addresses in
+    let rec loop i =
+      if i = len then
+        None
+      else if Crypto.Public.equal addresses.(i).Address.owner pkey then
+        Some i
+      else
+        loop (i+1)
+    in
+    loop 0
 
-  let root = {
-    addresses;
-    current = -1;
-    prev    = Crypto.Hash.of_bytes (Bytes.of_string "")
-  }
-
-  let hash x =
-    let buf = Utils.bin_dump bin_writer_t x in
+  let hash x = 
+    let buf = Bin_prot.Utils.bin_dump bin_writer_t x in
     Crypto.Hash.digest_buf buf
 
+  let genesis_hash = 
+    hash Genesis
+
+  let prev = function
+    | Proof { prev; _ } -> Crypto.Signed.unpack prev
+    | Genesis           -> genesis_hash
+
+  let root = Genesis
+
+  (* Checks that a proof is well-formed*)
   let check proof =
-    let { addresses; current; prev } = proof in
-    if equal proof root then
-      true
-    else
-      let owner = addresses.(current).Address.owner in
-      try ignore (Crypto.sign_open owner (Crypto.Hash.to_bytes prev)); true
-      with
-      | Sodium.Verification_failure -> false
+    match proof with
+    | Genesis -> true
+    | Proof  { prev } ->
+      let signer = Crypto.Signed.signer prev in
+      match index_of_player signer with
+      | None -> false
+      | Some index ->
+        let key = addresses.(index).Address.owner in
+        Crypto.Public.equal key signer
 
   let extend proof =
     if not (check proof) then
       failwith "leadership/roundrobin/extend: invalid proof";
-    let { addresses; current; _ } = proof in
-    let len  = Array.length addresses in
-    let next = addresses.((current + 1) mod len) in    
-    if Crypto.Public.equal next.Address.owner Cred.public_key then
-      let prev = Crypto.Hash.of_bytes (Crypto.sign Cred.secret_key (Crypto.Hash.to_bytes (hash proof))) in
-      Some {
-        addresses;
-        current = (current + 1) mod len;
-        prev
-      }
+    let next =
+      match proof with
+      | Genesis -> 
+        addresses.(0)
+      | Proof { prev } ->
+        let signer = Crypto.Signed.signer prev in
+        match index_of_player signer with
+        | None ->
+          failwith "leadership/roundrobin/extend: impossible case"
+        | Some index ->
+          let len = Array.length addresses in
+          addresses.((index + 1) mod len)
+    in
+    if Crypto.Public.equal next.Address.owner Cred.public_key then      
+      let signed = 
+        Crypto.Signed.pack (hash proof) (module Crypto.Hash) (module Cred) 
+      in
+      Some (Proof { prev = signed })
     else
       None
 
-  let leader { addresses; current; _ } =
-    addresses.(current).Address.owner
+  let leader proof =
+    match proof with
+    | Genesis -> 
+      failwith ""
+    | Proof { prev } ->
+      Crypto.Signed.signer prev
   
 end
 
