@@ -125,8 +125,11 @@ let sign skey bytes =
   S.Bytes.sign skey bytes
 
 let sign_open pkey bytes =
-  S.Bytes.sign_open pkey bytes
-
+  try Ok (S.Bytes.sign_open pkey bytes)
+  with
+  | Sodium.Verification_failure ->
+    Error `Verification_failure
+    
 
 module Hash =
 struct
@@ -153,11 +156,169 @@ struct
 
 end
 
+module Signed =
+struct
+
+  type signed_bytes = {
+    data   : Types.HuxiangBytes.t;
+    signer : Public.t;
+  }
+  [@@deriving bin_io, eq, show]
+
+  type 'a t = {
+    core  : signed_bytes;
+    value : 'a
+  }
+  [@@deriving bin_io, eq, show]
+
+  (* Unused otherwise, the compiler complains; TODO: avoid generation *)
+  let _ = show_signed_bytes
+
+  let open_signed_bytes { data; signer } =
+    sign_open signer data
+
+
+  let pack (type t) (value : t) (binable : (module Bin_prot.Binable.S with type t = t)) (cred : (module Credentials)) =
+    let module Bin  = (val binable) in
+    let module Cred = (val cred) in
+    let buf   = Bin_prot.Utils.bin_dump Bin.bin_writer_t value in
+    let bytes = Utils.buffer_to_bytes buf in
+    let sbytes = sign Cred.secret_key bytes in
+    {
+      core  = { data = sbytes; signer = Cred.public_key };
+      value
+    }
+
+  let unpack (type u) (x : u t) =
+    x.value
+
+    (* let module Bin = (val x.binable) in
+     * match sign_open x.core.signer x.core.data with
+     * | bytes ->
+     *   let len    = Bytes.length bytes in    
+     *   let buffer =
+     *     let b = Bin_prot.Common.create_buf len in
+     *     Bin_prot.Common.blit_bytes_buf bytes b ~len;
+     *     b
+     *   in
+     *   Ok (Bin.bin_reader_t.read buffer ~pos_ref:(ref 0))
+     * | exception e ->
+     *   Error e *)
+
+  let signer { core; _ } = core.signer
+
+  (* Bin_prot.Binable.S1 *)
+
+  let bin_shape_t _ =
+    bin_shape_signed_bytes
+
+  let bin_size_t _ =
+    fun x ->
+      bin_size_signed_bytes x.core
+
+  let bin_write_t (_ : 'a Bin_prot.Write.writer) =
+    fun buf ~pos { core; _ } ->
+      bin_write_signed_bytes  buf ~pos core
+
+  let bin_read_t (reader : 'a Bin_prot.Read.reader) =
+    fun buf ~pos_ref ->
+      let core = bin_read_signed_bytes buf ~pos_ref in
+      match open_signed_bytes core with
+      | Ok bytes ->
+        let buf = Utils.bytes_to_buffer bytes in
+        let r   = ref 0 in
+        let v   = reader buf ~pos_ref:r in
+        { core; value = v }
+      | Error `Verification_failure ->
+        failwith "huxiang/crypto/signed/bin_read_t: verification failure"
+
+  let __bin_read_t__ _ _ =
+    failwith "huxiang/crypto/signed/__bin_read_t__: should never be called"
+
+  let bin_writer_t (writer : 'a Bin_prot.Type_class.writer) =
+    let size  { core; _ } = bin_size_signed_bytes core in
+    let write = bin_write_t writer.write in
+    (* let write buf ~pos { core; _ } =
+     *   bin_write_signed_bytes buf pos core
+     * in *)
+    {
+      Bin_prot.Type_class.size;
+      write
+    }
+
+  let bin_reader_t (reader : 'a Bin_prot.Type_class.reader) =
+    let read = bin_read_t reader.read in
+    let vtag_read _ = 
+      failwith "huxiang/crypto/signed/bin_reader_t/vtag_read: not implemented"
+    in
+    {
+      Bin_prot.Type_class.read;
+      vtag_read
+    }
+
+  let bin_t { Bin_prot.Type_class.shape; writer; reader } =
+    {
+      Bin_prot.Type_class.shape = bin_shape_t shape;
+      writer = bin_writer_t writer;
+      reader = bin_reader_t reader
+    }
+    
+  (* let lift_bin_prot
+   *   (type u)
+   *   (binable : (module Bin_prot.Binable.S with type t = u)) =
+   *   let module Binable =
+   *   struct
+   * 
+   *     type nonrec t = u t
+   * 
+   *     let bin_size_t { core; _ } = bin_size_core core
+   * 
+   *     let bin_write_t : t Bin_prot.Write.writer =
+   *       fun buf ~pos { core; _ } ->
+   *         bin_write_core buf ~pos core
+   * 
+   *     let bin_read_t : t Bin_prot.Read.reader =
+   *       fun buf ~pos_ref ->
+   *         let core = bin_read_core buf ~pos_ref in
+   *         { core; binable }
+   * 
+   *     let bin_writer_t =
+   *       {
+   *         Bin_prot.Type_class.size = bin_size_t;
+   *         write = bin_write_t
+   *       }
+   * 
+   *     let bin_reader_t =
+   *       {
+   *         Bin_prot.Type_class.read = bin_read_t;
+   *         vtag_read = fun buf ~pos_ref i ->
+   *           let core = bin_reader_core.vtag_read buf ~pos_ref i in
+   *           { core; binable }
+   *       }
+   * 
+   *     let bin_shape_t = bin_shape_core
+   * 
+   *     let bin_t =
+   *       { Bin_prot.Type_class.shape = bin_shape_t;
+   *         writer = bin_writer_t;
+   *         reader = bin_reader_t
+   *       }
+   * 
+   *     let __bin_read_t__ =
+   *       __bin_read_core__
+   * 
+   *   end
+   *   in
+   *   (module Binable : Bin_prot.Binable.S with type t = u t) *)
+    
+end
+
 module type Hashable =
 sig
   type t
   val hash : t -> Hash.t
 end
+
 
 (* -------------------------------------------------------------------------- *)
 (* Tests *)
@@ -166,5 +327,8 @@ let%test _ =
   let (sk, pk) = random_key_pair () in
   let raw      = Bytes.of_string "message" in
   let signed   = sign sk raw in
-  let opened   = sign_open pk signed in
-  Bytes.equal raw opened
+  match sign_open pk signed with
+  | Ok opened ->
+    Bytes.equal raw opened
+  | _ ->
+    false

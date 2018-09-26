@@ -30,7 +30,7 @@ val seeded_key_pair : string -> Secret.t * Public.t
 val key_pair_to_cred : Secret.t * Public.t -> (module Credentials)
 
 val sign : Secret.t -> Bytes.t -> Bytes.t
-val sign_open : Public.t -> Bytes.t -> Bytes.t
+val sign_open : Public.t -> Bytes.t -> (Bytes.t, [`Verification_failure]) result
 
 module Hash :
 sig
@@ -46,6 +46,27 @@ sig
   val of_bytes : Bytes.t -> t
 
   val digest_buf : Bin_prot.Common.buf -> t
+end
+
+module Signed :
+sig
+
+  include Bin_prot.Binable.S1
+
+  val pack   : 'a -> (module Bin_prot.Binable.S with type t = 'a) -> (module Credentials) -> 'a t
+  val unpack : 'a t -> 'a
+  val signer : 'a t -> Public.t
+
+  val equal : ('a -> 'a -> bool) -> 'a t -> 'a t -> bool
+
+  val pp : 
+    (Format.formatter -> 'a -> Ppx_deriving_runtime.unit) ->
+    Format.formatter -> 'a t -> Ppx_deriving_runtime.unit
+
+  val show :
+    (Format.formatter -> 'a -> Ppx_deriving_runtime.unit) ->
+    'a t -> Ppx_deriving_runtime.string
+
 end
 
 module type Hashable =
