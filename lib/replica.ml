@@ -11,7 +11,6 @@ type notification =
 [@@deriving show, eq, bin_io]
 
 type ('l, 'i) input =
-  (* | Leader of { proof : 'l } *)
   | INotification of { proof : 'l; notif : notification }
   | IInput of 'i
 [@@deriving bin_io]
@@ -170,14 +169,13 @@ struct
     Process.without_input begin
       lwt_debug "huxiang/replica/process" "checking whether we are leader";%lwt
       let head = Chain.get_node state.chain state.chain.Chain.head in
+      (* Are we leader? *)
       match L.extend head.Chain.proof with
       | None ->
         lwt_debug "huxiang/replica/process" "we are not leader";%lwt
-        (* Lwt_unix.sleep 0.5;%lwt *)
         Process.continue_with state wait_for_input
       | Some proof ->
         lwt_debug "huxiang/replica/process" "we are leader";%lwt
-        (* Lwt_unix.sleep 0.5;%lwt *)
         let state = validate_leadership state proof in
         let node  = Chain.get_node state.chain state.current in
         Process.continue_with state (synch node.next)
@@ -435,9 +433,12 @@ struct
     | NetProcess.Input.Raw _ ->
       failwith "huxiang/replica/make/re_sign: input message not signed"
     | NetProcess.Input.Signed { data; pkey } ->
-      let data = Crypto.sign_open pkey data in
-      let data = Crypto.sign Cred.secret_key data in
-      NetProcess.Input.{ data = Signed { data; pkey = Cred.public_key } }
+      match Crypto.sign_open pkey data with
+      | Ok data ->
+        let data = Crypto.sign Cred.secret_key data in
+        NetProcess.Input.{ data = Signed { data; pkey = Cred.public_key } }
+      | Error `Verification_failure ->
+        failwith "huxiang/replica/make/re_sign: signature verification error"
 
   let pre (input : NetProcess.Input.t) =
     match input.NetProcess.Input.data with
@@ -449,14 +450,29 @@ struct
       in
       if originator_in_clique then
         let reader = I.bin_reader_t in
-        let bytes  = Crypto.sign_open pkey data in
+        let bytes  =
+          match Crypto.sign_open pkey data with
+          | Ok bytes -> bytes
+          | Error `Verification_failure ->
+            failwith "huxiang/replica/pre: signature verification error"
+        in
         let len    = Bytes.length bytes in
         let buffer =
           let b = Common.create_buf len in
           Common.blit_bytes_buf bytes b ~len;
           b
         in
-        reader.read buffer ~pos_ref:(ref 0)
+        let result = reader.read buffer ~pos_ref:(ref 0) in
+        match result with
+        | INotification { proof; _ } ->
+          if not (Crypto.Public.equal (L.leader proof) pkey) then
+            failwith @@ "huxiang/replica/make/pre:"^
+                        "player "^(Crypto.Public.show pkey)^
+                        "tries to impersonate player "^
+                        (Crypto.Public.show (L.leader proof))
+          else
+            result
+        | _ -> result
       else
         IInput (re_sign input)
     | NetProcess.Input.Raw _ ->
