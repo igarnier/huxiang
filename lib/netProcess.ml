@@ -1,4 +1,4 @@
-open Bin_prot
+module Bp = Bin_prot
 
 module Input =
 struct
@@ -46,19 +46,19 @@ module type Serializer =
 sig
   type t 
 
-  val serializer : t Type_class.writer
+  val serializer : t Bp.Type_class.writer
 end
 
 module type Deserializer =
 sig
   type t
-  val deserializer : Crypto.Public.t option -> t Type_class.reader
+  val deserializer : Crypto.Public.t option -> t Bp.Type_class.reader
 end
 
 let compile 
     (type inp) (type outp_data) (type st)
-    (deserializer : Crypto.Public.t option -> inp Type_class.reader)
-    (serializer : outp_data Type_class.writer)
+    (deserializer : Crypto.Public.t option -> inp Bp.Type_class.reader)
+    (serializer : outp_data Bp.Type_class.writer)
     (p : (module Process.S with type input = inp
                            and type output = outp_data Address.multi_dest
                            and type state  = st)) =
@@ -75,34 +75,26 @@ let compile
     let show_state = P.show_state
 
     let name = P.name
-
+                 
     let pre (input : Input.t) =
       match input.Input.data with
       | Input.Signed { data; pkey } ->
-        let bytes  = Crypto.sign_open pkey data in
-        let len    = Bytes.length bytes in
-        let buffer =
-          let b = Common.create_buf len in
-          Common.blit_bytes_buf bytes b ~len;
-          b
-        in
-        let reader = deserializer (Some pkey) in
-        reader.read buffer ~pos_ref:(ref 0)
+        (match Crypto.sign_open pkey data with
+         | Ok bytes ->
+           let buffer = Utils.bytes_to_buffer bytes in
+           let reader = deserializer (Some pkey) in
+           reader.read buffer ~pos_ref:(ref 0)
+         | Error `Verification_failure ->
+           failwith "huxiang/netProcess/compile/pre: verification failure"
+        )
       | Input.Raw { data = bytes } ->
-        let len    = Bytes.length bytes in
-        let buffer =
-          let b = Common.create_buf len in
-          Common.blit_bytes_buf bytes b ~len;
-          b
-        in
+        let buffer = Utils.bytes_to_buffer bytes in
         let reader = deserializer None in
         reader.read buffer ~pos_ref:(ref 0)
 
     let post (output : P.output) =
-      let buf   = Utils.bin_dump serializer output.msg in
-      let len   = Common.buf_len buf in
-      let bytes = Bytes.create len in
-      Common.blit_buf_bytes buf bytes ~len;
+      let buf   = Bp.Utils.bin_dump serializer output.msg in
+      let bytes = Utils.buffer_to_bytes buf in
       {
         output with
         Address.msg = bytes
