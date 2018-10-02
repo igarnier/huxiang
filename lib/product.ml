@@ -62,10 +62,7 @@ struct
       (* dispatch message internally *)
       let state =
         List.fold_left (fun state addr ->
-            let data =
-              NetProcess.({
-                  Input.data = Raw { data = msg }
-                }) in
+            let data = NetProcess.Input.Raw { data = msg } in
             append_to_buffer state addr.Address.owner data
           ) state inside
       in
@@ -83,12 +80,12 @@ struct
 
   let rec process state =
     let add_input =
-      Process.with_input_plain (fun ({ NetProcess.Input.data } as external_input) ->
-          match data with
+      Process.with_input_plain (fun external_input ->
+          match external_input with
           | NetProcess.Input.Raw _ ->
             Lwt.fail_with "huxiang/product/process: unsigned external input, error"
           | NetProcess.Input.Signed { data } ->
-            let pkey = Crypto.Signed.signer data in
+            let pkey  = Crypto.Signed.signer data in
             let state = append_to_buffer state pkey external_input in
             Process.continue_with state process
         )

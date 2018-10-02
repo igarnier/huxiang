@@ -1,7 +1,6 @@
 module Input :
 sig
-  type t = { data : data }
-  and data =
+  type t =
     | Signed of { data : Bytes.t Crypto.Signed.t }
     | Raw of { data : Bytes.t }
 

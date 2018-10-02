@@ -332,63 +332,6 @@ struct
            
 end
 
-(* module Serializer(L : Leadership.S) :
- *   NetProcess.Serializer 
- *   with type t = L.t output_data
- * =
- * struct
- * 
- *   type t = L.t output_data
- *   [@@deriving bin_io]
- *   
- *   let serializer = bin_writer_t
- *     
- * end *)
-
-(* module Deserializer(L : Leadership.S)(C : Address.Clique) :
- *   NetProcess.Deserializer 
- *   with type t = (L.t, NetProcess.Input.t) input
- * =
- * struct
- * 
- *   type t = (L.t, NetProcess.Input.t) input
- *   [@@deriving bin_io]
- * 
- *   let deserializer pubkey =
- *     match pubkey with
- *     | None ->
- *       failwith @@ "huxiang/replica/deserializer/deserialize: "^
- *                   "input message is not signed"
- *     | Some key ->
- *       let originator_in_clique =
- *         List.exists (fun { Address.owner; _ } ->
- *             Crypto.Public.equal owner key
- *           ) C.addresses
- *       in
- *       if originator_in_clique then
- *         bin_reader_t
- *       else
- *         let read : t Bin_prot.Read.reader = fun buf ~pos_ref ->
- *           (\* TODO: error here : these messages don't need to be
- *              deserialized at all, but this requires modifications
- *              to NetProcess. What we need to do, in this branch,
- *              is short-circuit deserialization.
- *              We might need GADTs in deserialization to encode this. 
- *              Or we might have an ad-hoc compilation for Replica,
- *              perhaps cleaner.
- *           *\)
- *           IInput (NetProcess.Input.bin_read_t buf ~pos_ref)
- *         in
- *         let vtag_read = fun buf ~pos_ref tag ->
- *           IInput (NetProcess.Input.bin_reader_t.vtag_read buf ~pos_ref tag)
- *         in
- *         {
- *           Bin_prot.Type_class.read; 
- *           vtag_read
- *         }
- * 
- * end *)
- 
 
 module Make(P : NetProcess.S)(S : Process.Scheduler)(L : Leadership.S)(C : Address.Clique)(Cred : Crypto.Credentials) =
 struct
@@ -404,8 +347,6 @@ struct
 
 
   module Rep = Replica(P)(S)(L)(PClique)
-
-  open Bin_prot
 
   module I =
   struct
@@ -428,19 +369,17 @@ struct
 
   let name = Rep.name
 
-  let re_sign { NetProcess.Input.data } =
-    match data with
+  let re_sign input =
+    match input with
     | NetProcess.Input.Raw _ ->
       failwith "huxiang/replica/make/re_sign: input message not signed"
     | NetProcess.Input.Signed { data } ->
       let data = Crypto.Signed.unpack data in
       let data = Crypto.Signed.pack data (module Types.HuxiangBytes) (module Cred) in
-      NetProcess.Input.{ data = Signed { data } }
-      (* | Error `Verification_failure ->
-       *   failwith "huxiang/replica/make/re_sign: signature verification error" *)
+      NetProcess.Input.Signed { data }
 
   let pre (input : NetProcess.Input.t) =
-    match input.NetProcess.Input.data with
+    match input with
     | NetProcess.Input.Signed { data } ->
       let pkey = Crypto.Signed.signer data in
       let originator_in_clique =
@@ -451,12 +390,7 @@ struct
       if originator_in_clique then
         let reader = I.bin_reader_t in
         let bytes  = Crypto.Signed.unpack data in
-        let len    = Bytes.length bytes in
-        let buffer =
-          let b = Common.create_buf len in
-          Common.blit_bytes_buf bytes b ~len;
-          b
-        in
+        let buffer = Utils.bytes_to_buffer bytes in
         let result = reader.read buffer ~pos_ref:(ref 0) in
         match result with
         | INotification { proof; _ } ->
@@ -477,14 +411,9 @@ struct
     let post (output : Rep.output) =
       match output.msg with
       | ONotification _ ->
-        let buf   = Utils.bin_dump O.bin_writer_t output.msg in
-        let len   = Common.buf_len buf in
-        let bytes = Bytes.create len in
-        Common.blit_buf_bytes buf bytes ~len;
-        {
-          output with
-          Address.msg = bytes
-        }
+        let buf   = Bin_prot.Utils.bin_dump O.bin_writer_t output.msg in
+        let bytes = Utils.buffer_to_bytes buf in
+        { output with Address.msg = bytes }
       | OOutput bytes ->
         { output with msg = bytes }
         

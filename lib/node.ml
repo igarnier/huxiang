@@ -11,17 +11,14 @@ struct
   type frame = NetProcess.input
 
   let frame_to_bytes ((uid : int64), frame) =
-    let open NetProcess in
-    Marshal.to_bytes (uid, frame.Input.data) []
+    Marshal.to_bytes (uid, frame) []
 
   let frame_of_bytes bytes =
-    let open NetProcess in
     let (uid, data) :
-      int64 * NetProcess.Input.data =
+      int64 * NetProcess.input =
       Marshal.from_bytes bytes 0
     in
-    let frame = { Input.data } in
-    (uid, frame)
+    (uid, data)
 
   type message =
     | Msg of {
@@ -173,7 +170,7 @@ struct
           in
           let open NetProcess in
           let data = Crypto.Signed.pack msg (module Types.HuxiangBytes) (module Cred) in
-          { Input.data = Signed { data } }
+          Input.Signed { data }
         in
         write_and_get_acked (Msg { uid; msg }) socket
       ) dests
