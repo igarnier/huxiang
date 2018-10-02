@@ -1,7 +1,7 @@
+type network_map = Address.t -> string
+
 module Make(P : NetProcess.S) :
 sig
-
-  type network_map = Address.t -> string
 
   val start : 
     listening:string -> 

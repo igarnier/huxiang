@@ -3,36 +3,35 @@ open Zmq
 
 module LwtSocket = Zmq_lwt.Socket
 
+type network_map = Address.t -> string
+
+open Bin_prot.Std
+
+type message =
+  | Msg of {
+      msg : NetProcess.Input.t;
+      uid : int64
+    }
+  | Ack of { uid : int64 }
+[@@deriving bin_io]
+
+let message_to_bytes msg =
+  let buf   = Bin_prot.Utils.bin_dump bin_writer_message msg in
+  Utils.buffer_to_bytes buf
+
+let message_from_bytes bytes =
+  let buffer = Utils.bytes_to_buffer bytes in
+  bin_reader_message.read buffer ~pos_ref:(ref 0)
+
+type routing =
+  | Dynamic of (Address.t -> [`Req] LwtSocket.t)
+
 module Make(P : NetProcess.S) =
 struct
-
-  type network_map = Address.t -> string
-
-  type frame = NetProcess.input
-
-  let frame_to_bytes ((uid : int64), frame) =
-    Marshal.to_bytes (uid, frame) []
-
-  let frame_of_bytes bytes =
-    let (uid, data) :
-      int64 * NetProcess.input =
-      Marshal.from_bytes bytes 0
-    in
-    (uid, data)
-
-  type message =
-    | Msg of {
-        msg : frame;
-        uid : int64
-      }
-    | Ack of { uid : int64 }
-              
-  type routing =
-    | Dynamic of (Address.t -> [`Req] LwtSocket.t)
       
   type t =
     {
-      ingoing  : [`Rep] LwtSocket.t; (* recv; send *)
+      ingoing  : [`Rep] LwtSocket.t; (* recv msg; send ack *)
       routing  : routing;
       mqueue   : NetProcess.output Lwt_mvar.t;
       process  : P.state NetProcess.t;
@@ -51,31 +50,6 @@ struct
     | Ack { uid } ->
       Printf.sprintf "ack(%Ld)" uid
   
-  let bytes_of_int64 i =
-    let io = IO.output_string () in
-    IO.write_i64 io i;
-    IO.close_out io
-
-  let int64_of_bytes s =
-    if String.length s <> 8 then
-      failwith "huxiang/node/int64_of_string: length <> 8"
-    else
-      let io = IO.input_string s in
-      IO.read_i64 io
-
-  (* let serialize_message (msg : O.t) (path : Address.access_path) =
-   *   let msgbytes = O.serialize msg in
-   *   Bytes.to_string (Marshal.to_bytes (path, msgbytes) [])
-   * 
-   * let deserialize_message (bytes : Bytes.t) =
-   *   let path, msgbytes =
-   *     (Marshal.from_bytes bytes 0 : Address.access_path * Bytes.t)
-   *   in
-   *   try%lwt Lwt.return (I.deserialize (Bytes.to_string msgbytes) path)
-   *   with
-   *   | exn ->
-   *     Lwt.fail_with @@ "huxiang/node/deserialize_message: error caught: "^
-   *                      (Printexc.to_string exn) *)
   let lwt_fail fname msg =
     Lwt.fail_with @@ fname^": "^msg
 
@@ -83,30 +57,12 @@ struct
     Lwt_log.debug_f "%s: %s" fname msg
 
   let input str =
-    let fname = "huxiang/node/input" in
-    if String.length str < 4 then
-      lwt_fail fname "input message too short"
-    else
-      let headr = String.head str 4 in
-      match headr with
-      | "mesg" ->
-        let tail  = String.tail str 4 in
-        let (uid, msg) = frame_of_bytes (Bytes.of_string tail) in
-        Lwt.return (Msg { msg; uid })
-      | "ackn" ->
-        let tail  = String.tail str 4 in
-        Lwt.return (Ack { uid = int64_of_bytes tail })
-      | _ ->
-        lwt_fail fname "incorrect header"
+    let bytes = Bytes.of_string str in
+    Lwt.return (message_from_bytes bytes)
           
   let output msg =
-    match msg with
-    | Msg { msg; uid } ->
-      let bytes = frame_to_bytes (uid, msg) in
-      let str   = Bytes.to_string bytes in
-      "mesg"^str
-    | Ack { uid } ->
-      "ackn"^(bytes_of_int64 uid)
+    let bytes = message_to_bytes msg in
+    Bytes.to_string bytes
 
   let read_and_ack provider =
     let fname = "huxiang/node/read_and_ack" in
@@ -264,9 +220,6 @@ struct
       sck
     | Some sck ->
       sck
-
-  (* let check_uniq l =
-   *   List.length (List.sort_uniq String.compare l) = (List.length l) *)
 
   let start ~listening ~network_map ~skey ~pkey =
     with_context (fun ctx ->

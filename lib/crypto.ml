@@ -192,22 +192,7 @@ struct
   let unpack (type u) (x : u t) =
     x.value
 
-    (* let module Bin = (val x.binable) in
-     * match sign_open x.core.signer x.core.data with
-     * | bytes ->
-     *   let len    = Bytes.length bytes in    
-     *   let buffer =
-     *     let b = Bin_prot.Common.create_buf len in
-     *     Bin_prot.Common.blit_bytes_buf bytes b ~len;
-     *     b
-     *   in
-     *   Ok (Bin.bin_reader_t.read buffer ~pos_ref:(ref 0))
-     * | exception e ->
-     *   Error e *)
-
   let signer { core; _ } = core.signer
-
-  (* Bin_prot.Binable.S1 *)
 
   let bin_shape_t _ =
     bin_shape_signed_bytes
