@@ -164,7 +164,7 @@ struct
   let blame proof msg =
     let leader_pkey = Crypto.Public.show (L.leader proof) in
     Lwt.fail_with @@ msg^" Originator: "^leader_pkey
-
+                     
   let rec process state =
     Process.without_input begin
       lwt_debug "huxiang/replica/process" "checking whether we are leader";%lwt

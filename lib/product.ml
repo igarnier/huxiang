@@ -77,10 +77,9 @@ struct
           (* let _ = failwith @@ "emitting a message on behalf of "^(Crypto.Public.show emitter_pkey) in *)
           state, Some { Address.msg; dests }
         else
-          (* Outbound messages emitted by processes that don't belong to us are
+          (* Outbound messages emitted by processes that don't belong to P.owner are
              filtered out. *)
           state, None
-
 
   let rec process state =
     let add_input =
@@ -107,7 +106,10 @@ struct
                   (play_input pkey buffer state f) :: acc
             ) acc ks
         ) state []
-    in      
+    in
+    (* A transition in the product corresponds to either take an inbound input
+       and add it to some buffer, OR
+       play a transition. *)
     add_input :: playable_transition
 
   and play_noinput pkey state code =

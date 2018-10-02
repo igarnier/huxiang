@@ -26,6 +26,7 @@ struct
 
     (** Direct pointer to the previous node. *)
     prev  : Crypto.Hash.t option;
+
     (** Direct pointer to the next node. *)
     next  : Crypto.Hash.t option
   }
@@ -124,7 +125,6 @@ struct
         table
 
   and extend_chain node table =
-    (* TODO: update previous head to point on { node where prev = previous_head } *)
     let prev_head = Table.find table.head table.nodes in
     let prev_head = { prev_head with next = Some node.hash } in
     let new_head  = { node with prev = Some prev_head.hash; next = None } in
