@@ -1,4 +1,5 @@
 module Bp = Bin_prot
+open Bp.Std
 
 module Input =
 struct
@@ -7,7 +8,7 @@ struct
   [@@deriving bin_io, eq, show]
   
   and data =
-    | Signed of { data : Types.HuxiangBytes.t; pkey : Crypto.Public.t }
+    | Signed of { data : bytes Crypto.Signed.t }
     | Raw of { data : Types.HuxiangBytes.t }
   [@@deriving bin_io, eq, show]
 
@@ -78,15 +79,12 @@ let compile
                  
     let pre (input : Input.t) =
       match input.Input.data with
-      | Input.Signed { data; pkey } ->
-        (match Crypto.sign_open pkey data with
-         | Ok bytes ->
-           let buffer = Utils.bytes_to_buffer bytes in
-           let reader = deserializer (Some pkey) in
-           reader.read buffer ~pos_ref:(ref 0)
-         | Error `Verification_failure ->
-           failwith "huxiang/netProcess/compile/pre: verification failure"
-        )
+      | Input.Signed { data } ->
+        let pkey   = Crypto.Signed.signer data in
+        let bytes  = Crypto.Signed.unpack data in
+        let buffer = Utils.bytes_to_buffer bytes in
+        let reader = deserializer (Some pkey) in
+        reader.read buffer ~pos_ref:(ref 0)
       | Input.Raw { data = bytes } ->
         let buffer = Utils.bytes_to_buffer bytes in
         let reader = deserializer None in

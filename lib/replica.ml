@@ -432,17 +432,17 @@ struct
     match data with
     | NetProcess.Input.Raw _ ->
       failwith "huxiang/replica/make/re_sign: input message not signed"
-    | NetProcess.Input.Signed { data; pkey } ->
-      match Crypto.sign_open pkey data with
-      | Ok data ->
-        let data = Crypto.sign Cred.secret_key data in
-        NetProcess.Input.{ data = Signed { data; pkey = Cred.public_key } }
-      | Error `Verification_failure ->
-        failwith "huxiang/replica/make/re_sign: signature verification error"
+    | NetProcess.Input.Signed { data } ->
+      let data = Crypto.Signed.unpack data in
+      let data = Crypto.Signed.pack data (module Types.HuxiangBytes) (module Cred) in
+      NetProcess.Input.{ data = Signed { data } }
+      (* | Error `Verification_failure ->
+       *   failwith "huxiang/replica/make/re_sign: signature verification error" *)
 
   let pre (input : NetProcess.Input.t) =
     match input.NetProcess.Input.data with
-    | NetProcess.Input.Signed { data; pkey } ->
+    | NetProcess.Input.Signed { data } ->
+      let pkey = Crypto.Signed.signer data in
       let originator_in_clique =
         List.exists (fun { Address.owner; _ } ->
             Crypto.Public.equal owner pkey
@@ -450,12 +450,7 @@ struct
       in
       if originator_in_clique then
         let reader = I.bin_reader_t in
-        let bytes  =
-          match Crypto.sign_open pkey data with
-          | Ok bytes -> bytes
-          | Error `Verification_failure ->
-            failwith "huxiang/replica/pre: signature verification error"
-        in
+        let bytes  = Crypto.Signed.unpack data in
         let len    = Bytes.length bytes in
         let buffer =
           let b = Common.create_buf len in

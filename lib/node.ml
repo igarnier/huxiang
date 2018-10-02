@@ -165,8 +165,15 @@ struct
             Lwt.fail exn
         in
         let msg  = 
+          let module Cred : Crypto.Credentials = 
+          struct 
+            let public_key = pkey
+            let secret_key = skey
+          end
+          in
           let open NetProcess in
-          { Input.data = Signed { data = Crypto.sign skey msg; pkey } }
+          let data = Crypto.Signed.pack msg (module Types.HuxiangBytes) (module Cred) in
+          { Input.data = Signed { data } }
         in
         write_and_get_acked (Msg { uid; msg }) socket
       ) dests

@@ -2,8 +2,8 @@ module Input :
 sig
   type t = { data : data }
   and data =
-    | Signed of { data : Types.HuxiangBytes.t; pkey : Crypto.Public.t }
-    | Raw of { data : Types.HuxiangBytes.t }
+    | Signed of { data : Bytes.t Crypto.Signed.t }
+    | Raw of { data : Bytes.t }
 
   include Bin_prot.Binable.S with type t := t
   include Types.Equalable with type t := t

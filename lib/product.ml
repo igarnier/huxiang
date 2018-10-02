@@ -87,7 +87,8 @@ struct
           match data with
           | NetProcess.Input.Raw _ ->
             Lwt.fail_with "huxiang/product/process: unsigned external input, error"
-          | NetProcess.Input.Signed { pkey; _ } ->
+          | NetProcess.Input.Signed { data } ->
+            let pkey = Crypto.Signed.signer data in
             let state = append_to_buffer state pkey external_input in
             Process.continue_with state process
         )
