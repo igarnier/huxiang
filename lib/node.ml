@@ -18,12 +18,12 @@ let lwt_fail_exn fname msg exn =
   in
   Lwt.fail_with err
 
-let fail_exn fname msg exn =
-  let s   = Printexc.to_string exn in
-  let err =
-    Printf.sprintf "%s: exception %s raised (%s)" fname s msg
-  in
-  failwith err
+(* let fail_exn fname msg exn =
+ *   let s   = Printexc.to_string exn in
+ *   let err =
+ *     Printf.sprintf "%s: exception %s raised (%s)" fname s msg
+ *   in
+ *   failwith err *)
 
 
 module LwtSocket = Zmq_lwt.Socket
@@ -38,7 +38,7 @@ type output_socket =
   | Publish     of address
   | ReliableOut of address
 
-type network_map = Address.t -> address
+type network_map = Address.t -> output_socket
 
 open Bin_prot.Std
 
@@ -60,7 +60,7 @@ let message_from_bytes bytes =
   bin_reader_message.read buffer ~pos_ref:(ref 0)
 
 type routing =
-  | Dynamic of (Address.t -> [`Dealer] LwtSocket.t)
+  | Dynamic of (Address.t -> [`Dealer | `Pub] LwtSocket.t)
 
 type node_state =
   {
@@ -240,42 +240,49 @@ struct
         Socket.close s
       ) outgoing
       
-  let get_socket ctx table address =
-    let fname = "huxiang/node/get_socket" in
-    match Hashtbl.find_option table address with
-    | None ->
-      let sck = 
-        try Socket.create ctx Socket.dealer 
-        with exn -> fail_exn fname "Socket.create" exn
-      in
-      let () =
-        try Socket.connect sck address 
-        with exn -> fail_exn fname ("Socket.connect "^address) exn
-      in
-      let sck = LwtSocket.of_socket sck in
-      Hashtbl.add table address sck;
-      sck
-    | Some sck ->
-      sck
-
   let create_in_socket ctx input_socket =
+    let open Socket in
     match input_socket with 
     | Subscribe addr ->
-      let open Socket in
       let sck = create ctx sub in
       Socket.bind sck addr;
       LwtSocket.of_socket sck
     | ReliableIn addr ->
-      let open Socket in
       let sck = create ctx dealer in
       Socket.bind sck addr;
       LwtSocket.of_socket sck
-          
-  let start ~(listening : input_socket list) ~network_map ~skey ~pkey =
+
+  let create_out_socket ctx output_socket =
+    let open Socket in
+    match output_socket with 
+    | Publish addr ->
+      let sck = create ctx pub in
+      Socket.connect sck addr;
+      LwtSocket.of_socket sck
+    | ReliableOut addr ->
+      let sck = create ctx dealer in
+      Socket.connect sck addr;
+      LwtSocket.of_socket sck
+
+  let get_socket ctx table output_socket =
+    (* let fname = "huxiang/node/get_socket" in *)
+    match Hashtbl.find_option table output_socket with
+    | None ->
+      let sck = create_out_socket ctx output_socket in
+      Hashtbl.add table output_socket sck;
+      sck
+    | Some sck ->
+      sck
+         
+  let start
+      ~(listening : input_socket list)
+      ~(network_map : network_map)
+      ~skey
+      ~pkey =
     (* let fname = "huxiang/node/start" in *)
     with_context (fun ctx ->
         let ingoing = List.map (create_in_socket ctx) listening in
-        let table = Hashtbl.create 30 in
+        let table = Hashtbl.create 30 in (* *)
         let node_state = {
           ingoing;
           routing = Dynamic (fun x -> get_socket ctx table (network_map x));

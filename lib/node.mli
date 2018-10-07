@@ -25,7 +25,7 @@ type output_socket =
   | Publish     of address
   | ReliableOut of address
 
-type network_map = Address.t -> address
+type network_map = Address.t -> output_socket
 
 module Make(P : NetProcess.S) :
 sig
