@@ -20,6 +20,7 @@ struct
 
   let rec main_loop { counter } =
     Process.with_input (fun (I.Pong i) ->
+        Lwt_log.info @@ "received "^(I.show (I.Pong i));%lwt
         if i = counter then
           let state  = { counter = counter + 1 } in
           let output = Address.(O.Ping (counter+1) @. Directory.pong_node) in
@@ -47,14 +48,14 @@ let compiled = NetProcess.compile (fun _ -> I.bin_reader_t) O.bin_writer_t (modu
 module PingNode = Huxiang.Node.Make((val compiled))
 
 let _ =
-  let () = Lwt_log.add_rule "*" Lwt_log.Debug in
+  let () = Lwt_log.add_rule "*" Lwt_log.Info in
   Lwt_log.default := (Lwt_log.channel
                         ~template:"[$(level)] $(message)"
                         ~channel:Lwt_io.stderr
                         ~close_mode:`Keep
                         ());
   PingNode.start
-    ~listening:"tcp://127.0.0.1:5556"
+    ~listening:[ReliableIn "tcp://127.0.0.1:5556"]
     ~network_map:(fun _ -> "tcp://127.0.0.1:5557")
     ~skey:Directory.ping_skey
     ~pkey:Directory.ping_pkey
