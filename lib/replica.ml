@@ -1,34 +1,35 @@
 open Bin_prot.Std
 
-type notification_kind =
-  | Transition of { t_index : int }
-  | NoTransition
-[@@deriving show, eq, bin_io]
-
-type notification = 
-  { nkind  : notification_kind;
-    inputs : NetProcess.Input.t list }
-[@@deriving show, eq, bin_io]
-
-type ('l, 'i) input =
-  | INotification of { proof : 'l; notif : notification }
-  | IInput of 'i
-[@@deriving bin_io]
-
-type 'l output_data =
-  | ONotification of { proof : 'l; notif : notification }
-  | OOutput of Types.HuxiangBytes.t
-[@@deriving bin_io]
-
-module Replica(P : NetProcess.S)(S : Process.Scheduler)(L : Leadership.S)(C : Address.PointedClique) :
-  Process.S with type input = (L.t, P.input) input
-             and type output = L.t output_data Address.multi_dest
+module Replica(P : NetProcess.S)(S : Process.Scheduler)(L : Leadership.S)(C : Address.PointedClique)
+(*  :
+   * Process.S with type input = (L.t, P.input) input
+   *            and type output = L.t output_data Address.multi_dest *)
 =
 struct
 
-  type nonrec input = (L.t, P.input) input
+  type notification_kind =
+    | Transition of { t_index : int }
+    | NoTransition
+  [@@deriving show, eq, bin_io]
 
-  type output = L.t output_data Address.multi_dest
+  type notification = 
+    { nkind  : notification_kind;
+      inputs : NetProcess.Input.t list }
+  [@@deriving show, eq, bin_io]
+  
+  type input =
+    | INotification of { proof : L.t; notif : notification }
+    | IInput of NetProcess.Input.t
+  [@@deriving bin_io]
+
+  type output_data =
+    | ONotification of { proof : L.t; notif : notification }
+    | OOutput of Types.HuxiangBytes.t
+  [@@deriving bin_io]
+
+  (* type nonrec input = (L.t, P.input) input *)
+
+  type output = (* L.t *) output_data Address.multi_dest
 
   module Data =
   struct
@@ -69,7 +70,7 @@ struct
           not (Crypto.Public.equal owner C.owner)
         ) C.addresses
     in
-    fun (msg : L.t output_data) ->
+    fun (msg : (* L.t *) output_data) ->
     {
       dests = everyone_except_me;
       msg
@@ -350,13 +351,13 @@ struct
 
   module I =
   struct
-    type t = (L.t, NetProcess.Input.t) input
+    type t = (* (L.t, NetProcess.Input.t) *) Rep.input
     [@@deriving bin_io]
   end
 
   module O =
   struct
-    type t = L.t output_data
+    type t = (* L.t *) Rep.output_data
     [@@deriving bin_io]
   end
 
