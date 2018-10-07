@@ -8,7 +8,7 @@ let _ =
                         ~close_mode:`Keep
                         ());
   NetworkNode.start
-    ~listening:Directory.brok
+    ~listening:[Huxiang.Node.ReliableIn Directory.brok]
     ~network_map:Directory.network_map
     ~skey:Directory.BrokerCred.secret_key
     ~pkey:Directory.BrokerCred.public_key

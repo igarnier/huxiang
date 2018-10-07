@@ -7,7 +7,7 @@ let _ =
                         ~close_mode:`Keep
                         ());
   NetworkNode.start
-    ~listening:Directory.clnt
+    ~listening:[Huxiang.Node.ReliableIn Directory.clnt]
     ~network_map:Directory.network_map
     ~skey:Directory.ClientCred.secret_key
     ~pkey:Directory.ClientCred.public_key
