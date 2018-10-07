@@ -44,7 +44,7 @@ let _ =
                         ());  
   PongNode.start
     ~listening:[ReliableIn "tcp://127.0.0.1:5557"]
-    ~network_map:(fun _ -> "tcp://127.0.0.1:5556")
+    ~network_map:(fun _ -> ReliableOut "tcp://127.0.0.1:5556")
     ~skey:Directory.pong_skey
     ~pkey:Directory.pong_pkey
 
