@@ -12,7 +12,6 @@ type message =
       msg : NetProcess.Input.t;
       uid : int64
     }
-  | Ack of { uid : int64 }
 [@@deriving bin_io]
 
 let message_to_bytes msg =
@@ -24,31 +23,25 @@ let message_from_bytes bytes =
   bin_reader_message.read buffer ~pos_ref:(ref 0)
 
 type routing =
-  | Dynamic of (Address.t -> [`Req] LwtSocket.t)
+  | Dynamic of (Address.t -> [`Dealer] LwtSocket.t)
 
 module Make(P : NetProcess.S) =
 struct
       
   type t =
     {
-      ingoing  : [`Rep] LwtSocket.t; (* recv msg; send ack *)
+      ingoing  : [`Dealer] LwtSocket.t; (* recv msg; send ack *)
       routing  : routing;
       mqueue   : NetProcess.output Lwt_mvar.t;
       process  : P.state NetProcess.t;
       skey     : Crypto.Secret.t;
       pkey     : Crypto.Public.t
     }
-
-  let get_uid = function
-    | Msg { uid; _ }
-    | Ack { uid } -> uid
     
   let print_msg msg =
     match msg with
     | Msg { uid; _ } ->
       Printf.sprintf "msg(%Ld)" uid
-    | Ack { uid } ->
-      Printf.sprintf "ack(%Ld)" uid
   
   let lwt_fail fname msg =
     Lwt.fail_with @@ fname^": "^msg
@@ -64,20 +57,15 @@ struct
     let bytes = message_to_bytes msg in
     Bytes.to_string bytes
 
-  let read_and_ack provider =
+  let read_msg provider =
     let fname = "huxiang/node/read_and_ack" in
     let%lwt str = LwtSocket.recv provider in
     let%lwt msg = input str in
     lwt_debug fname ("read message "^(print_msg msg));%lwt
     match msg with
-    | Msg { msg; uid } ->
-      let reply = Ack { uid } in
-      LwtSocket.send provider (output reply);%lwt
-      Lwt.return msg
-    |  _ ->
-      lwt_fail fname "wrong message"
+    | Msg { msg; _ } -> Lwt.return msg
 
-  let write_and_get_acked out_msg (consumer : [`Req] LwtSocket.t) =
+  let write_msg(*and_get_acked*) out_msg (consumer : [`Dealer] LwtSocket.t) =
     let fname = "huxiang/node/write_and_get_acked" in
     let%lwt serialized =
       try%lwt Lwt.return (output out_msg)
@@ -85,24 +73,10 @@ struct
         let message = 
           "error caught during serialization: "^(Printexc.to_string exn) 
         in
-        lwt_debug fname message;%lwt
-        Lwt.fail exn
+        lwt_fail fname message
     in
     LwtSocket.send consumer serialized;%lwt
-    lwt_debug fname ("message sent, waiting for ack: "^(print_msg out_msg));%lwt
-    let%lwt str = LwtSocket.recv consumer in
-    lwt_debug fname "ack received";%lwt
-    let%lwt msg = input str in
-    match msg with
-    | Ack { uid } ->
-      if not (Int64.equal uid (get_uid msg)) then
-        lwt_fail fname "wrong uid"
-      else
-        Lwt.return ()
-    | _ ->  
-      lwt_fail fname "wrong message"
-        
-  let read_from_ingoing ingoing = read_and_ack ingoing
+    lwt_debug fname ("message sent: "^(print_msg out_msg))
 
   let write_to_outgoing { Address.msg; dests } uid (Dynamic table) skey pkey =
     let fname = "huxiang/node/write_to_outgoing" in
@@ -128,7 +102,7 @@ struct
           let data = Crypto.Signed.pack msg (module Types.HuxiangBytes) (module Cred) in
           Input.Signed { data }
         in
-        write_and_get_acked (Msg { uid; msg }) socket
+        write_msg (Msg { uid; msg }) socket
       ) dests
         
   let reader_thread { ingoing; mqueue; process; _ } =
@@ -148,7 +122,7 @@ struct
       match Process.evolve process with
       | (Input transition) :: _ ->
         lwt_debug fname "Input transition";%lwt
-        (let%lwt msg = read_from_ingoing ingoing in
+        (let%lwt msg = read_msg ingoing in
          lwt_debug fname "read";%lwt
          let%lwt { Process.output; next } =
            try%lwt transition msg with
@@ -207,7 +181,7 @@ struct
   let get_socket ctx table address =
     match Hashtbl.find_option table address with
     | None ->
-      let sck = Socket.(create ctx req) in
+      let sck = Socket.(create ctx dealer) in
       (try Socket.connect sck address with
        | exn ->
          let s = Printexc.to_string exn in
@@ -224,7 +198,7 @@ struct
   let start ~listening ~network_map ~skey ~pkey =
     with_context (fun ctx ->
         let ingoing =
-          let sck = Socket.(create ctx rep) in
+          let sck = Socket.(create ctx dealer) in
           (try Socket.bind sck listening with
            | exn ->
              let s = Printexc.to_string exn in
