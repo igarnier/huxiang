@@ -2,6 +2,7 @@ open Batteries
 open Zmq
 
 (* Aux functions *)
+
 let lwt_debug fname msg =
   Lwt_log.debug_f "%s: %s" fname msg
 
@@ -24,6 +25,8 @@ let lwt_fail_exn fname msg exn =
  *     Printf.sprintf "%s: exception %s raised (%s)" fname s msg
  *   in
  *   failwith err *)
+
+
 
 
 module LwtSocket = Zmq_lwt.Socket
@@ -72,6 +75,7 @@ type node_state =
     pkey     : Crypto.Public.t
   }
 
+(* -------------------------------------------------------------------------- *)
 (* Reader thread *)
 
 let message_from_string (str : string) =
@@ -171,6 +175,7 @@ struct
   let process_thread state =
     let fname = "huxiang/node/process_thread" in
     let rec loop process =
+      lwt_debug fname ("entering loop with state"^(P.show_state process.Process.state));%lwt
       let transitions = Process.evolve process in
       match transitions with
       | [] ->
@@ -185,12 +190,13 @@ struct
             List.filter (function
                 | Process.Input _ -> input_present
                 | _               -> true
-              ) (Process.evolve process)
+              ) transitions
           in
           match transitions with
           | [] ->
-            (* No transitions can be played now. We should wake up
-               this thread whenever some input is received. *)
+            (* No transitions can be played now. 
+               TODO: we should wake up this thread only when some new input
+               arrives. *)
             lwt_debug fname "no playable transition";%lwt
             Lwt.pause ();%lwt
             loop process
@@ -220,8 +226,10 @@ struct
         end
     and continue out next = (* factorised continuation *)
       (match out with
-       | None     -> Lwt.return ()
-       | Some out -> Lwt_mvar.put state.node_state.oqueue out
+       | None     -> 
+         Lwt.return ()
+       | Some out -> 
+         Lwt_mvar.put state.node_state.oqueue out
       );%lwt
       loop next
     in
@@ -246,6 +254,7 @@ struct
     | Subscribe addr ->
       let sck = create ctx sub in
       Socket.bind sck addr;
+      Socket.subscribe sck "";
       LwtSocket.of_socket sck
     | ReliableIn addr ->
       let sck = create ctx dealer in
@@ -282,7 +291,7 @@ struct
     (* let fname = "huxiang/node/start" in *)
     with_context (fun ctx ->
         let ingoing = List.map (create_in_socket ctx) listening in
-        let table = Hashtbl.create 30 in (* *)
+        let table = Hashtbl.create 30 in
         let node_state = {
           ingoing;
           routing = Dynamic (fun x -> get_socket ctx table (network_map x));
