@@ -66,7 +66,7 @@ struct
   let broadcast =
     let open Address in
     let everyone_except_me =
-      List.filter (fun { Address.owner; _ } ->
+      List.filter (function Address. { owner; _ } ->
           not (Crypto.Public.equal owner C.owner)
         ) C.addresses
     in
@@ -384,7 +384,7 @@ struct
     | NetProcess.Input.Signed { data } ->
       let pkey = Crypto.Signed.signer data in
       let originator_in_clique =
-        List.exists (fun { Address.owner; _ } ->
+        List.exists (function Address.{ owner; _ } ->
             Crypto.Public.equal owner pkey
           ) C.addresses
       in

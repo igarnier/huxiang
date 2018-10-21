@@ -25,7 +25,11 @@ type output_socket =
   | Publish     of address
   | ReliableOut of address
 
-type network_map = Address.t -> output_socket
+type dest =
+  | Addr of Address.t
+  | Bcast
+
+type network_map = dest -> output_socket
 
 module Make(P : NetProcess.S) :
 sig
@@ -33,8 +37,7 @@ sig
   val start : 
     listening:input_socket list -> 
     network_map:network_map ->
-    skey:Crypto.Secret.t ->
-    pkey:Crypto.Public.t ->
+    credentials:(module Crypto.Credentials) ->
     unit  
   
 end

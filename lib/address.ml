@@ -1,10 +1,9 @@
 open Bin_prot
 
-type t =
-  {
-    owner : Crypto.Public.t;
-    pname : Name.t
-  }
+type t = {
+  owner : Crypto.Public.t;
+  pname : Name.t
+}
 [@@deriving show, eq, bin_io]
 
 type 'a multi_dest = {

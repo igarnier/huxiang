@@ -32,16 +32,25 @@ let lwt_fail_exn fname msg exn =
 module LwtSocket = Zmq_lwt.Socket
 
 type address = string
+[@@deriving show]
+
+let _ = show_address
 
 type input_socket =
   | Subscribe  of address
   | ReliableIn of address
+[@@deriving show]
 
 type output_socket =
   | Publish     of address
   | ReliableOut of address
+(* [@@deriving show] *)
 
-type network_map = Address.t -> output_socket
+type dest =
+  | Addr of Address.t
+  | Bcast
+
+type network_map = dest -> output_socket
 
 open Bin_prot.Std
 
@@ -63,7 +72,7 @@ let message_from_bytes bytes =
   bin_reader_message.read buffer ~pos_ref:(ref 0)
 
 type routing =
-  | Dynamic of (Address.t -> [`Dealer | `Pub] LwtSocket.t)
+  | Dynamic of (dest -> [`Dealer | `Pub] LwtSocket.t)
 
 type node_state =
   {
@@ -71,8 +80,7 @@ type node_state =
     routing  : routing;
     iqueue   : NetProcess.input list Lwt_mvar.t;
     oqueue   : NetProcess.output Lwt_mvar.t;
-    skey     : Crypto.Secret.t;
-    pkey     : Crypto.Public.t
+    creds    : (module Crypto.Credentials)
   }
 
 (* -------------------------------------------------------------------------- *)
@@ -119,28 +127,25 @@ let write_socket msg (consumer : 'a LwtSocket.t) =
   LwtSocket.send consumer serialized;%lwt
   lwt_debug fname ("message sent: "^(show_message msg))
 
-let write_to_outgoing { Address.msg; dests } uid (Dynamic table) skey pkey =
+let write_to_outgoing { Address.msg; dests } uid (Dynamic table) creds =
   (* let fname = "huxiang/node/write_to_outgoing" in *)
-  Lwt_list.iter_p (fun address ->
-      let socket = table address in
-      let msg  = 
-        let module Cred : Crypto.Credentials = 
-        struct 
-          let public_key = pkey
-          let secret_key = skey
-        end
-        in
-        let open NetProcess in
-        let data = Crypto.Signed.pack msg (module Types.HuxiangBytes) (module Cred) in
-        Input.Signed { data }
-      in
-      write_socket (Msg { msg; uid }) socket
-    ) dests
+  let data = Crypto.Signed.pack msg (module Types.HuxiangBytes) creds in
+  let msg  = Msg { msg = NetProcess.Input.Signed { data }; uid } in
+  match dests with
+  | [] ->
+    (* no dests -> bcast *)
+    let socket = table Bcast in
+    write_socket msg socket
+  | _ ->
+    Lwt_list.iter_p (fun address ->
+        let socket = table (Addr address) in
+        write_socket msg socket
+      ) dests
 
-let writer_thread { routing; oqueue; skey; pkey; _ } =
+let writer_thread { routing; oqueue; creds; _ } =
   let rec loop uid =
     let%lwt msg = Lwt_mvar.take oqueue in
-    write_to_outgoing msg uid routing skey pkey;%lwt
+    write_to_outgoing msg uid routing creds;%lwt
     loop Int64.(uid + one)
   in
   loop Int64.zero
@@ -208,11 +213,13 @@ struct
               | Input transition ->
                 lwt_debug fname "playing Input transition";%lwt
                 let%lwt msg = take_one_input state in
+                lwt_debug fname "took one input";%lwt
                 let%lwt { Process.output; next } =
                   try%lwt transition msg with
                   | exn ->
                     lwt_fail_exn fname "error caught in Input transition" exn
                 in
+                lwt_debug fname "played successfully";%lwt
                 continue output next
               | NoInput transition ->
                 lwt_debug fname "playing NoInput transition";%lwt
@@ -286,25 +293,30 @@ struct
   let start
       ~(listening : input_socket list)
       ~(network_map : network_map)
-      ~skey
-      ~pkey =
+      ~(credentials : (module Crypto.Credentials)) =
     (* let fname = "huxiang/node/start" in *)
+    let module Cred = (val credentials : Crypto.Credentials) in
     with_context (fun ctx ->
         let ingoing = List.map (create_in_socket ctx) listening in
-        let table = Hashtbl.create 30 in
+        let table   = Hashtbl.create 30 in
         let node_state = {
           ingoing;
           routing = Dynamic (fun x -> get_socket ctx table (network_map x));
           iqueue  = Lwt_mvar.create [];
           oqueue  = Lwt_mvar.create_empty ();
-          skey;
-          pkey
+          creds   = credentials;
         } in
         let whole_state = { node_state; process = P.thread } in
         let program =
           Lwt.finalize
             (fun () ->
                Lwt_log.log ~level:Info "Starting node!";%lwt
+               let in_sockets =
+                 listening
+                 |> List.map show_input_socket
+                 |> String.concat ", "
+               in
+               Lwt_log.log_f ~level:Info "Listening to: %s" in_sockets;%lwt
                Lwt.join [ reader_thread node_state;
                           writer_thread node_state;
                           process_thread whole_state
