@@ -1,5 +1,9 @@
 open Batteries
 
+(* We dispatch messages according to owner identities. Since in this example
+   each owner has only one node, there is no ambiguity, but in general this 
+   is wrong. *)
+
 module Node = Huxiang.Node.Make((val Processes.compiled_service))
 
 let _ =
@@ -10,7 +14,7 @@ let _ =
                         ~close_mode:`Keep
                         ());
   Node.start
-    ~listening:[Huxiang.Node.ReliableIn "tcp://127.0.0.1:5558"]
-    ~network_map:(fun _ -> "")
+    ~listening:[Huxiang.Node.ReliableIn Directory.serv]
+    ~network_map:(fun _ -> failwith "network map should not be called")
     ~skey:Directory.ServiceCred.secret_key
     ~pkey:Directory.ServiceCred.public_key

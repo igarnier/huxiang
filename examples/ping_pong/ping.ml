@@ -57,5 +57,4 @@ let _ =
   PingNode.start
     ~listening:[ReliableIn "tcp://127.0.0.1:5556"]
     ~network_map:(fun _ -> ReliableOut "tcp://127.0.0.1:5557")
-    ~skey:Directory.ping_skey
-    ~pkey:Directory.ping_pkey
+    ~credentials:Directory.ping_creds

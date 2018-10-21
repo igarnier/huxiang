@@ -1,4 +1,15 @@
 open Batteries
+open Huxiang
+open Directory
+
+let network_map = function
+  | { Address.owner; _ } when 
+      Crypto.Public.equal owner service_node.owner -> 
+    Node.ReliableOut Directory.serv
+  | addr ->
+    failwith @@ 
+    Printf.sprintf "unknown address %s" (Address.show addr)
+
 
 module Node = Huxiang.Node.Make((val Processes.compiled_broker))
 
@@ -9,9 +20,8 @@ let _ =
                         ~channel:Lwt_io.stderr
                         ~close_mode:`Keep
                         ());
-  let serv = "tcp://127.0.0.1:5558" in
   Node.start
-    ~listening:[Huxiang.Node.ReliableIn "tcp://127.0.0.1:5557"]
-    ~network_map:(fun _ -> serv)
+    ~listening:[Huxiang.Node.Subscribe Directory.brok_clnt]
+    ~network_map:network_map
     ~skey:Directory.BrokerCred.secret_key
     ~pkey:Directory.BrokerCred.public_key

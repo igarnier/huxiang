@@ -26,20 +26,7 @@ let broker_node =
   }
 
 let clnt = "tcp://127.0.0.1:5555"
+let brok_clnt = "tcp://127.0.0.1:5557"
+let brok_serv = "tcp://127.0.0.1:5558"
 let serv = "tcp://127.0.0.1:5556"
-let brok = "tcp://127.0.0.1:5557"
-
-(* We dispatch messages according to owner identities. Since in this example
-   each owner has only one node, there is no ambiguity, but in general this 
-   is wrong. *)
-let network_map = function
-  | { Address.owner; _ } when 
-      Crypto.Public.equal owner client_node.owner  -> clnt
-  | { Address.owner; _ } when 
-      Crypto.Public.equal owner service_node.owner -> serv
-  | { Address.owner; _ } when 
-      Crypto.Public.equal owner broker_node.owner  -> brok
-  | addr ->
-    failwith @@ 
-    Printf.sprintf "unknown address %s" (Address.show addr)
 
