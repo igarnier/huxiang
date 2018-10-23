@@ -177,10 +177,7 @@ struct
   let open_signed_bytes { data; signer } =
     sign_open signer data
 
-
-  let pack (type t) (value : t) (binable : (module Bin_prot.Binable.S with type t = t)) (cred : (module Credentials)) =
-    let module Bin  = (val binable) in
-    let module Cred = (val cred) in
+  let pack (type t) (value : t) (module Bin : Bin_prot.Binable.S with type t = t) (module Cred : Credentials) =
     let buf   = Bin_prot.Utils.bin_dump Bin.bin_writer_t value in
     let bytes = Utils.buffer_to_bytes buf in
     let sbytes = sign Cred.secret_key bytes in
@@ -248,53 +245,6 @@ struct
       reader = bin_reader_t reader
     }
     
-  (* let lift_bin_prot
-   *   (type u)
-   *   (binable : (module Bin_prot.Binable.S with type t = u)) =
-   *   let module Binable =
-   *   struct
-   * 
-   *     type nonrec t = u t
-   * 
-   *     let bin_size_t { core; _ } = bin_size_core core
-   * 
-   *     let bin_write_t : t Bin_prot.Write.writer =
-   *       fun buf ~pos { core; _ } ->
-   *         bin_write_core buf ~pos core
-   * 
-   *     let bin_read_t : t Bin_prot.Read.reader =
-   *       fun buf ~pos_ref ->
-   *         let core = bin_read_core buf ~pos_ref in
-   *         { core; binable }
-   * 
-   *     let bin_writer_t =
-   *       {
-   *         Bin_prot.Type_class.size = bin_size_t;
-   *         write = bin_write_t
-   *       }
-   * 
-   *     let bin_reader_t =
-   *       {
-   *         Bin_prot.Type_class.read = bin_read_t;
-   *         vtag_read = fun buf ~pos_ref i ->
-   *           let core = bin_reader_core.vtag_read buf ~pos_ref i in
-   *           { core; binable }
-   *       }
-   * 
-   *     let bin_shape_t = bin_shape_core
-   * 
-   *     let bin_t =
-   *       { Bin_prot.Type_class.shape = bin_shape_t;
-   *         writer = bin_writer_t;
-   *         reader = bin_reader_t
-   *       }
-   * 
-   *     let __bin_read_t__ =
-   *       __bin_read_core__
-   * 
-   *   end
-   *   in
-   *   (module Binable : Bin_prot.Binable.S with type t = u t) *)
     
 end
 

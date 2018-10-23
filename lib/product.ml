@@ -132,8 +132,7 @@ struct
     end
 
   let name =
-    let names = List.map (fun m ->
-        let module M = (val m : NetProcess.S) in
+    let names = List.map (fun (module M : NetProcess.S) ->
         M.name
       ) P.processes
     in

@@ -39,12 +39,9 @@ let compile
     (type inp) (type outp_data) (type st)
     (deserializer : Crypto.Public.t option -> inp Bp.Type_class.reader)
     (serializer : outp_data Bp.Type_class.writer)
-    (p : (module Process.S with type input = inp
+    (module P : Process.S with type input = inp
                            and type output = outp_data Address.multi_dest
-                           and type state  = st)) =
-  let module P : Process.S with type input = inp
-                           and type output = outp_data Address.multi_dest
-                           and type state  = st  = (val p) in
+                           and type state  = st) =
   let module Result = struct
 
     type nonrec input  = input

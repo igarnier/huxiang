@@ -3,7 +3,7 @@
     resumptions. *)
 
 (** Transitions are either requiring an input ([Input]) or requiring no input
-    ([NoInput]). A process can also [Stop]. *)
+    ([NoInput]).  *)
 type ('i,'o) transition = private
   | Input of ('i -> 'o)
   (** Requires an external input before proceeding to the next state. *)
@@ -40,8 +40,10 @@ type ('s, 'i, 'o) scheduler =
 (** [first_pick_scheduler] picks the first transition available. Beware, this
     scheduler is /not/ fair. *)
 val first_pick_scheduler : ('s, 'i, 'o) scheduler
+
 (** [uniform_random_scheduler] picks a transition uniformly at random. *)
 val uniform_random_scheduler : ('s, 'i, 'o) scheduler
+
 (** [eager_random_scheduler] picks a transition uniformly at random among
     the NoInput set. If no such transition is available, it picks a transition
     uniformly at random in the Input set. Beware, this scheduler is /not/
@@ -84,6 +86,7 @@ val evolve :
 
 (** In some cases, it is useful to keep the internal state of the process
     hidden, in which case we have to use the following [evolve_module] function. *)
+(* TODO: get rid of this. *)
 
 type ('a, 'b) process_module = 
   (module S with type input = 'a and type output = 'b)
